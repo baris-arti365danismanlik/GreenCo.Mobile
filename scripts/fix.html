@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html>
+<head><title>Fix</title></head>
+<body>
+  <h1 id="s">Çalışıyor...</h1>
+  <script type="module">
+    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+    const sb = createClient('https://mtfqfzilbyyxwjfuhkdf.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im10ZnFmemlsYnl5eHdqZnVoa2RmIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NDIyMzg2MSwiZXhwIjoyMDc5Nzk5ODYxfQ.MfXQ3xN0aBVQqEZyMhKg0-K5RxF5ZOTqrPjYx6sLn5M',{auth:{autoRefreshToken:false,persistSession:false}});
+    const u=['f70ba0b8-2f7d-427e-810d-17115e1c0484','bea51ab5-8aae-45c4-9f45-5d974f25cbd0','2a5f23e3-da2e-4ed3-a004-8c448c97c3bb','9e2606c4-d436-4b35-ad72-e608288483f6','e57b0a55-1446-4fb3-8855-9f446fa242d6','5c6491bc-ab53-4357-b581-416854134a66','fae454e2-c1f2-4d7a-b50c-e6342b521431','bfd9bbe1-05bb-4cd9-be15-112ac72a807b','8eb9a0ea-dec0-4d1f-99a9-17308e87039d','ed79721e-bd92-4bba-a78a-dd164da47416','2f9592e5-9a85-4d02-a381-68b83d81431d','9dcdd13a-f1a5-4407-b97d-e880b9a0f463','155768ea-5ee8-4ef4-8e7d-fae3e303c561'];
+    for(const id of u){await sb.auth.admin.updateUserById(id,{password:'GreenCo2025!'});await new Promise(r=>setTimeout(r,200));}
+    document.getElementById('s').innerHTML='✅ BİTTİ!<br>Şifre: GreenCo2025!<br><br>Admin | +905551111111<br>Berat | +905551234567<br>Berat Admin | +905559999999<br>Test Admin | +905552222222<br>op yön | +905455454545<br>pro yön | +905445444444<br>daad fdafs af | +905556663322<br>bbb ccc | +905553333333<br>cccc fff | +905552562255<br>sad asdqwdq | +905556859632<br>sasa asda | +905445552233<br>sasdfa sda | +905556589852<br>sdad fasfsf | +905556529163';
+  </script>
+</body>
+</html>

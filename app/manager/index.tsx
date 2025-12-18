@@ -1,0 +1,177 @@
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
+import { Users, Wrench, ChevronRight } from 'lucide-react-native';
+import { COLORS } from '@/constants/theme';
+import { useAuth } from '@/contexts/AuthContext';
+import { GreencoLogo } from '@/components/GreencoLogo';
+import React from 'react';
+
+type ServiceModule = {
+  id: 'personnel' | 'technical';
+  name: string;
+  description: string;
+  icon: any;
+  color: string;
+  bgColor: string;
+  route: string;
+};
+
+const MODULES: ServiceModule[] = [
+  {
+    id: 'personnel',
+    name: 'Personel Hizmetleri',
+    description: 'Personel talepleri ve yönetimi',
+    icon: Users,
+    color: '#059669',
+    bgColor: '#d1fae5',
+    route: '/manager/projects',
+  },
+  {
+    id: 'technical',
+    name: 'Teknik Hizmetler',
+    description: 'Teknik destek ve çözümler',
+    icon: Wrench,
+    color: '#2563eb',
+    bgColor: '#dbeafe',
+    route: '/technical',
+  },
+];
+
+export default function ManagerModuleSelect() {
+  const router = useRouter();
+  const { profile } = useAuth();
+
+  const serviceModules = (profile as any)?.service_modules || [];
+
+  const availableModules = MODULES.filter(module =>
+    serviceModules.includes(module.id)
+  );
+
+  React.useEffect(() => {
+    if (availableModules.length === 1) {
+      router.replace(availableModules[0].route);
+    }
+  }, [availableModules]);
+
+  if (availableModules.length === 1) {
+    return null;
+  }
+
+  return (
+    <SafeAreaView style={styles.container} edges={['top']}>
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        <View style={styles.content}>
+          <View style={styles.logoContainer}>
+            <GreencoLogo size="medium" variant="light" />
+          </View>
+
+          <Text style={styles.title}>Hoş Geldiniz</Text>
+          <Text style={styles.subtitle}>{profile?.full_name || 'Kullanıcı'}</Text>
+          <Text style={styles.description}>Kullanmak istediğiniz hizmeti seçin</Text>
+
+          <View style={styles.modulesContainer}>
+            {availableModules.map(module => {
+              const Icon = module.icon;
+              return (
+                <TouchableOpacity
+                  key={module.id}
+                  style={[
+                    styles.moduleCard,
+                    { borderLeftColor: module.color, borderLeftWidth: 4 },
+                  ]}
+                  onPress={() => router.push(module.route)}
+                >
+                  <View
+                    style={[styles.iconContainer, { backgroundColor: module.bgColor }]}
+                  >
+                    <Icon size={32} color={module.color} />
+                  </View>
+                  <View style={styles.moduleInfo}>
+                    <Text style={styles.moduleName}>{module.name}</Text>
+                    <Text style={styles.moduleDescription}>{module.description}</Text>
+                  </View>
+                  <ChevronRight size={24} color={COLORS.textLight} />
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: COLORS.bg,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    padding: 20,
+  },
+  content: {
+    width: '100%',
+    alignItems: 'center',
+  },
+  logoContainer: {
+    marginBottom: 30,
+    alignItems: 'center',
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: COLORS.secondary,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  subtitle: {
+    fontSize: 18,
+    color: COLORS.textLight,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  description: {
+    fontSize: 14,
+    color: COLORS.textLight,
+    marginBottom: 40,
+    textAlign: 'center',
+  },
+  modulesContainer: {
+    width: '100%',
+    gap: 16,
+  },
+  moduleCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 20,
+    backgroundColor: 'white',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    gap: 16,
+  },
+  iconContainer: {
+    width: 60,
+    height: 60,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  moduleInfo: {
+    flex: 1,
+  },
+  moduleName: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.secondary,
+    marginBottom: 4,
+  },
+  moduleDescription: {
+    fontSize: 14,
+    color: COLORS.textLight,
+    lineHeight: 20,
+  },
+});

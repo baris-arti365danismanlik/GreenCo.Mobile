@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Recreate Technical Company Users</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            border-bottom: 3px solid #4CAF50;
+            padding-bottom: 10px;
+        }
+        .info-box {
+            background: #e3f2fd;
+            border-left: 4px solid #2196F3;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 10px 5px;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        button:disabled {
+            background: #cccccc;
+            cursor: not-allowed;
+        }
+        #output {
+            background: #f5f5f5;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 15px;
+            margin-top: 20px;
+            min-height: 100px;
+            font-family: 'Courier New', monospace;
+            white-space: pre-wrap;
+        }
+        .success {
+            color: #4CAF50;
+            font-weight: bold;
+        }
+        .error {
+            color: #f44336;
+            font-weight: bold;
+        }
+        .warning {
+            color: #ff9800;
+            font-weight: bold;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .stat-card {
+            background: #f9f9f9;
+            padding: 15px;
+            border-radius: 5px;
+            border-left: 4px solid #2196F3;
+        }
+        .stat-card h3 {
+            margin: 0 0 5px 0;
+            font-size: 14px;
+            color: #666;
+        }
+        .stat-card p {
+            margin: 0;
+            font-size: 24px;
+            font-weight: bold;
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔄 Recreate Technical Company Users</h1>
+
+        <div class="info-box">
+            <strong>⚠️ Bu işlem:</strong>
+            <ul>
+                <li>Tüm technical_service_companies için yeni kullanıcılar oluşturur</li>
+                <li>Kullanıcıların JWT metadata'sına role ve technical_company_id ekler</li>
+                <li>Zaten var olan kullanıcılar atlanır</li>
+                <li>Varsayılan şifre: <code>123456</code></li>
+            </ul>
+        </div>
+
+        <button id="createBtn" onclick="createUsers()">
+            ▶️ Kullanıcıları Oluştur
+        </button>
+
+        <div class="stats" id="stats" style="display: none;">
+            <div class="stat-card">
+                <h3>Toplam Şirket</h3>
+                <p id="totalCompanies">0</p>
+            </div>
+            <div class="stat-card">
+                <h3>Oluşturulan</h3>
+                <p id="createdCount" style="color: #4CAF50;">0</p>
+            </div>
+            <div class="stat-card">
+                <h3>Atlanan</h3>
+                <p id="skippedCount" style="color: #ff9800;">0</p>
+            </div>
+            <div class="stat-card">
+                <h3>Hata</h3>
+                <p id="errorCount" style="color: #f44336;">0</p>
+            </div>
+        </div>
+
+        <div id="output"></div>
+    </div>
+
+    <script>
+        const SUPABASE_URL = 'https://mtfqfzilbyyxwjfuhkdf.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im10ZnFmemlsYnl5eHdqZnVoa2RmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQyMjM4NjEsImV4cCI6MjA3OTc5OTg2MX0.dNLoLj8Sjr3zMP_JYW3noaKp2bugsYsdwatmf_YMHRY';
+
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        function log(message, type = 'info') {
+            const output = document.getElementById('output');
+            const timestamp = new Date().toLocaleTimeString();
+            let className = '';
+
+            if (type === 'success') className = 'success';
+            if (type === 'error') className = 'error';
+            if (type === 'warning') className = 'warning';
+
+            output.innerHTML += `<span class="${className}">[${timestamp}] ${message}</span>\n`;
+            output.scrollTop = output.scrollHeight;
+        }
+
+        async function createUsers() {
+            const btn = document.getElementById('createBtn');
+            const output = document.getElementById('output');
+            const stats = document.getElementById('stats');
+
+            btn.disabled = true;
+            output.innerHTML = '';
+            stats.style.display = 'none';
+
+            try {
+                log('🔐 Admin olarak giriş yapılıyor...', 'info');
+
+                // Admin olarak giriş yap - telefon: 5556663322, şifre: 123456
+                const { data: authData, error: signInError } = await supabase.auth.signInWithPassword({
+                    phone: '+905556663322',
+                    password: '123456'
+                });
+
+                if (signInError) {
+                    log(`❌ Giriş hatası: ${signInError.message}`, 'error');
+                    log('💡 Lütfen admin olarak giriş yapın (Telefon: 5556663322, Şifre: 123456)', 'warning');
+                    btn.disabled = false;
+                    return;
+                }
+
+                log('✅ Admin girişi başarılı', 'success');
+                log('📞 Edge function çağrılıyor...', 'info');
+
+                // Edge function'ı çağır
+                const { data, error } = await supabase.functions.invoke('create-technical-company-users', {
+                    body: {}
+                });
+
+                if (error) {
+                    log(`❌ Edge function hatası: ${error.message}`, 'error');
+                    btn.disabled = false;
+                    return;
+                }
+
+                log('✅ İşlem tamamlandı!', 'success');
+                log('', 'info');
+
+                // İstatistikleri göster
+                stats.style.display = 'grid';
+                document.getElementById('totalCompanies').textContent = data.total_companies || 0;
+                document.getElementById('createdCount').textContent = data.created || 0;
+                document.getElementById('skippedCount').textContent = data.skipped || 0;
+                document.getElementById('errorCount').textContent = data.errors || 0;
+
+                // Sonuçları göster
+                log('📊 Detaylı Sonuçlar:', 'info');
+                log('', 'info');
+
+                if (data.results && data.results.length > 0) {
+                    data.results.forEach(result => {
+                        if (result.status === 'created') {
+                            log(`✅ ${result.company_name} - ${result.phone} - Oluşturuldu`, 'success');
+                        } else if (result.status === 'skipped') {
+                            log(`⏭️  ${result.company_name} - ${result.phone} - Zaten var`, 'warning');
+                        }
+                    });
+                }
+
+                if (data.errors && data.errors.length > 0) {
+                    log('', 'info');
+                    log('❌ Hatalar:', 'error');
+                    data.errors.forEach(err => {
+                        log(`  • ${err.company_name}: ${err.error}`, 'error');
+                    });
+                }
+
+                log('', 'info');
+                log('🎉 Tüm kullanıcılar başarıyla oluşturuldu!', 'success');
+                log('📝 Kullanıcılar şu email formatıyla oluşturuldu: [telefon_no]@greenco.app', 'info');
+                log('🔑 Varsayılan şifre: 123456', 'info');
+
+            } catch (error) {
+                log(`❌ Beklenmeyen hata: ${error.message}`, 'error');
+                console.error(error);
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        log('👋 Hazır! "Kullanıcıları Oluştur" butonuna tıklayarak başlayın.', 'info');
+    </script>
+</body>
+</html>

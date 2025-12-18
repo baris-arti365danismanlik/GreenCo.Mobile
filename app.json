@@ -1,0 +1,32 @@
+{
+  "expo": {
+    "name": "Greenco Service",
+    "slug": "greenco-service",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/image.png",
+    "scheme": "greenco",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.greenco.service"
+    },
+    "android": {
+      "package": "com.greenco.service",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/image.png",
+        "backgroundColor": "#1B7F4D"
+      }
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single",
+      "favicon": "./assets/images/image.png"
+    },
+    "plugins": ["expo-router", "expo-font", "expo-web-browser"],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

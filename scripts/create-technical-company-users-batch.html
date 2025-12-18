@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teknisyen Firma Kullanıcıları Oluştur</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #34495e;
+        }
+        input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+        button {
+            width: 100%;
+            padding: 12px;
+            background-color: #27ae60;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 16px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        button:hover {
+            background-color: #229954;
+        }
+        button:disabled {
+            background-color: #95a5a6;
+            cursor: not-allowed;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 4px;
+            display: none;
+        }
+        .result.success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .result.error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .result.info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        .details {
+            margin-top: 15px;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .details pre {
+            margin: 0;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        .loading {
+            text-align: center;
+            color: #7f8c8d;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Teknisyen Firma Kullanıcıları Oluştur</h1>
+
+        <form id="createUsersForm">
+            <div class="form-group">
+                <label for="supabaseUrl">Supabase URL:</label>
+                <input type="url" id="supabaseUrl" placeholder="https://your-project.supabase.co" required>
+            </div>
+
+            <div class="form-group">
+                <label for="supabaseAnonKey">Supabase Anon Key:</label>
+                <input type="text" id="supabaseAnonKey" placeholder="Your anon key" required>
+            </div>
+
+            <div class="form-group">
+                <label for="adminPhone">Admin Telefon (+90xxxxxxxxxx):</label>
+                <input type="tel" id="adminPhone" placeholder="+905551234567" required>
+            </div>
+
+            <div class="form-group">
+                <label for="adminPassword">Admin Şifre:</label>
+                <input type="password" id="adminPassword" placeholder="Admin şifreniz" required>
+            </div>
+
+            <button type="submit" id="submitBtn">Tüm Teknisyen Firma Kullanıcılarını Oluştur</button>
+        </form>
+
+        <div id="loading" class="loading" style="display: none;">
+            İşlem devam ediyor, lütfen bekleyin...
+        </div>
+
+        <div id="result" class="result"></div>
+    </div>
+
+    <script type="module">
+        import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+        const form = document.getElementById('createUsersForm');
+        const resultDiv = document.getElementById('result');
+        const submitBtn = document.getElementById('submitBtn');
+        const loadingDiv = document.getElementById('loading');
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const supabaseUrl = document.getElementById('supabaseUrl').value;
+            const supabaseAnonKey = document.getElementById('supabaseAnonKey').value;
+            const adminPhone = document.getElementById('adminPhone').value;
+            const adminPassword = document.getElementById('adminPassword').value;
+
+            submitBtn.disabled = true;
+            loadingDiv.style.display = 'block';
+            resultDiv.style.display = 'none';
+
+            try {
+                const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+                // Admin login
+                const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+                    email: `${adminPhone.replace('+', '')}@greenco.app`,
+                    password: adminPassword,
+                });
+
+                if (authError) {
+                    throw new Error('Admin girişi başarısız: ' + authError.message);
+                }
+
+                // Call edge function
+                const response = await fetch(`${supabaseUrl}/functions/v1/create-technical-company-users`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${authData.session.access_token}`,
+                        'Content-Type': 'application/json',
+                    },
+                });
+
+                const result = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(result.error || 'İşlem başarısız');
+                }
+
+                // Show success result
+                resultDiv.className = 'result success';
+                resultDiv.style.display = 'block';
+                resultDiv.innerHTML = `
+                    <strong>✓ İşlem Tamamlandı!</strong>
+                    <p>Toplam Firma: ${result.total_companies}</p>
+                    <p>Oluşturulan: ${result.created}</p>
+                    <p>Atlanan (Zaten Mevcut): ${result.skipped}</p>
+                    <p>Hata: ${result.errors}</p>
+                    ${result.results.length > 0 ? `
+                        <div class="details">
+                            <strong>Detaylar:</strong>
+                            <pre>${JSON.stringify(result.results, null, 2)}</pre>
+                        </div>
+                    ` : ''}
+                    ${result.errors.length > 0 ? `
+                        <div class="details">
+                            <strong>Hatalar:</strong>
+                            <pre>${JSON.stringify(result.errors, null, 2)}</pre>
+                        </div>
+                    ` : ''}
+                `;
+
+            } catch (error) {
+                resultDiv.className = 'result error';
+                resultDiv.style.display = 'block';
+                resultDiv.innerHTML = `<strong>✗ Hata:</strong><br>${error.message}`;
+            } finally {
+                submitBtn.disabled = false;
+                loadingDiv.style.display = 'none';
+            }
+        });
+    </script>
+</body>
+</html>

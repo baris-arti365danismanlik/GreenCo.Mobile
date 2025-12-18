@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Fix Missing Users</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+    <h1>Eksik Kullanıcıları Oluştur</h1>
+    <button onclick="fix()">Çalıştır</button>
+    <pre id="log"></pre>
+
+    <script>
+        const supabase = window.supabase.createClient(
+            'https://mtfqfzilbyyxwjfuhkdf.supabase.co',
+            'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im10ZnFmemlsYnl5eHdqZnVoa2RmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQyMjM4NjEsImV4cCI6MjA3OTc5OTg2MX0.dNLoLj8Sjr3zMP_JYW3noaKp2bugsYsdwatmf_YMHRY'
+        );
+
+        async function fix() {
+            const log = document.getElementById('log');
+            log.textContent = 'Başlıyor...\n';
+
+            // Admin giriş
+            const { error: authError } = await supabase.auth.signInWithPassword({
+                phone: '+905556663322',
+                password: '123456'
+            });
+
+            if (authError) {
+                log.textContent += 'HATA: Admin giriş başarısız: ' + authError.message;
+                return;
+            }
+
+            log.textContent += '✓ Admin giriş başarılı\n';
+
+            const companies = [
+                { company_name: 'kadıköy test1', phone: '05559132846', password: '123456' },
+                { company_name: 'kadıköy test2', phone: '05558796321', password: '123456' }
+            ];
+
+            const { data: { session } } = await supabase.auth.getSession();
+
+            const response = await fetch('https://mtfqfzilbyyxwjfuhkdf.supabase.co/functions/v1/create-technical-company-users', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${session.access_token}`
+                },
+                body: JSON.stringify({ companies })
+            });
+
+            const result = await response.json();
+            log.textContent += '\nSonuç:\n' + JSON.stringify(result, null, 2);
+
+            if (response.ok) {
+                log.textContent += '\n\n✓ BAŞARILI! Giriş bilgileri:\n';
+                log.textContent += '  kadıköy test1: 905559132846@greenco.app / 123456\n';
+                log.textContent += '  kadıköy test2: 905558796321@greenco.app / 123456\n';
+            }
+        }
+    </script>
+</body>
+</html>

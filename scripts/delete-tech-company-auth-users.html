@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Delete Technical Company Auth Users</title>
+</head>
+<body>
+  <h1>Delete Technical Company Auth Users</h1>
+  <button id="deleteBtn">Delete All @greenco.app Users</button>
+  <pre id="result"></pre>
+
+  <script type="module">
+    const SUPABASE_URL = 'https://xzkkqwvjdtkognskvhzi.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh6a2txd3ZqZHRrb2duc2t2aHppIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzI2OTUwOTQsImV4cCI6MjA0ODI3MTA5NH0.SdoZIm0NB4oX3AsSiNTX9V9cSoOXXRvQVzU0Zp4awj0';
+
+    document.getElementById('deleteBtn').addEventListener('click', async () => {
+      const result = document.getElementById('result');
+      result.textContent = 'Deleting users...';
+
+      try {
+        const response = await fetch(`${SUPABASE_URL}/functions/v1/delete-technical-company-users`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        });
+
+        const data = await response.json();
+        result.textContent = JSON.stringify(data, null, 2);
+      } catch (error) {
+        result.textContent = `Error: ${error.message}`;
+      }
+    });
+  </script>
+</body>
+</html>

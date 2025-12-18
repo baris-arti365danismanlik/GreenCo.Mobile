@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Create Technical Companies Users</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    body {
+      font-family: system-ui;
+      max-width: 1000px;
+      margin: 50px auto;
+      padding: 20px;
+    }
+    .user { margin: 10px 0; padding: 10px; background: #f0f0f0; border-radius: 4px; }
+    .success { background: #d4edda; }
+    .error { background: #f8d7da; }
+    button { padding: 10px 20px; font-size: 16px; cursor: pointer; margin: 10px 0; }
+    #log { margin-top: 20px; padding: 15px; background: #f9f9f9; border: 1px solid #ddd; border-radius: 4px; max-height: 500px; overflow-y: auto; }
+    table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+    th { background: #4CAF50; color: white; }
+    tr:nth-child(even) { background: #f2f2f2; }
+  </style>
+</head>
+<body>
+  <h1>Create Technical Companies Users</h1>
+
+  <div>
+    <h3>Supabase Configuration</h3>
+    <label>Supabase URL:</label><br>
+    <input type="text" id="supabaseUrl" style="width: 100%; padding: 8px; margin: 5px 0;" placeholder="https://xxx.supabase.co"><br>
+
+    <label>Supabase Anon Key:</label><br>
+    <input type="text" id="supabaseKey" style="width: 100%; padding: 8px; margin: 5px 0;"><br>
+
+    <label>Admin Phone:</label><br>
+    <input type="text" id="adminPhone" value="+905551234567" style="width: 100%; padding: 8px; margin: 5px 0;"><br>
+
+    <label>Admin Password:</label><br>
+    <input type="password" id="adminPassword" value="GreenCo2025!" style="width: 100%; padding: 8px; margin: 5px 0;"><br>
+  </div>
+
+  <button onclick="createAllUsers()">Create All Technical Company Users</button>
+
+  <div id="log"></div>
+
+  <div id="credentialsTable" style="display:none;">
+    <h2>Login Credentials</h2>
+    <table id="credsTable">
+      <thead>
+        <tr>
+          <th>Firma Adı</th>
+          <th>İrtibat Kişisi</th>
+          <th>Telefon</th>
+          <th>Şifre</th>
+          <th>Rol</th>
+        </tr>
+      </thead>
+      <tbody id="credsBody"></tbody>
+    </table>
+  </div>
+
+  <script>
+    const companies = [
+      { id: '3f08355e-54db-46ae-8daf-7833990773a1', name: 'Adana İklim Teknik', contact: 'Ali Yıldırım', phone: '+905331111001' },
+      { id: '05ee4f77-46d1-451c-9fea-7c35cf71c2ba', name: 'Çukurova HVAC Sistemleri', contact: 'Mehmet Kaya', phone: '+905331111002' },
+      { id: '48940d1e-8348-44d6-805e-a0ca56a017af', name: 'Adana Asansör Teknik Servis', contact: 'Ayşe Demir', phone: '+905331111003' },
+      { id: 'f12aa761-983e-4f09-ace4-cec62c53f37d', name: 'Sarıçam Enerji Teknolojileri', contact: 'Fatma Şahin', phone: '+905331111004' },
+      { id: '47e399ac-46b7-4dec-ba04-8ebaf0066556', name: 'Adana Endüstriyel Mutfak Servisi', contact: 'Hasan Çelik', phone: '+905331111005' },
+      { id: 'a7e99e79-d385-48e1-b483-4c29fd99c4db', name: 'Ceyhan Soğutma Sistemleri', contact: 'Zeynep Arslan', phone: '+905331111006' },
+      { id: '01ec7503-b3a9-448f-bbae-82eeb294e185', name: 'Kozan Elektrik ve Tesisat', contact: 'Murat Öztürk', phone: '+905331111007' },
+      { id: '82d17c9c-f97d-43ef-b416-e8b15480ae7f', name: 'Kadıköy İklim Sistemleri', contact: 'Elif Aydın', phone: '+902161111001' },
+      { id: '5b3e1125-3d4a-4b36-b811-32d20f98d4a2', name: 'Beşiktaş Asansör Teknolojileri', contact: 'Can Yılmaz', phone: '+902121111002' },
+      { id: 'ea4212b3-e611-4385-bf2b-6895fb66f4a7', name: 'Şişli Endüstriyel Mutfak Servisi', contact: 'Deniz Kaya', phone: '+902122221003' },
+      { id: '70518784-b61c-4a76-aaa0-e5e66018a662', name: 'Ümraniye Enerji Sistemleri', contact: 'Burak Demir', phone: '+902163331004' },
+      { id: 'c4b1897f-865d-49d8-bb7d-5c740e99d2a1', name: 'Sarıyer Elektronik Servis', contact: 'Selin Yıldız', phone: '+902124441005' },
+      { id: '9b21e5c1-3faa-4eac-9774-1fb0c570e627', name: 'Maltepe Soğutma Teknolojileri', contact: 'Emre Şahin', phone: '+902165551006' },
+      { id: '5e656902-ac94-4acf-ae1d-94c8ad8e70be', name: 'Pendik Yapı ve Tesisat', contact: 'Derya Çelik', phone: '+902166661007' },
+      { id: '2d520782-1d1e-4140-9c23-f918e7423fd6', name: 'Bakırköy Temizlik ve Hijyen', contact: 'Kemal Arslan', phone: '+902127771008' },
+      { id: 'd3df8b28-54ee-4676-96a5-7bc2e39310aa', name: 'Çekmeköy Tadilat ve Dekorasyon', contact: 'Aysun Öztürk', phone: '+902168881009' },
+      { id: '035fd707-7f50-491f-be49-66f40799a2b8', name: 'Eyüp Kapı Pencere Sistemleri', contact: 'Serkan Aydın', phone: '+902129991010' }
+    ];
+
+    const credentials = [];
+
+    function log(message, isError = false) {
+      const logDiv = document.getElementById('log');
+      const entry = document.createElement('div');
+      entry.className = 'user ' + (isError ? 'error' : 'success');
+      entry.textContent = message;
+      logDiv.appendChild(entry);
+      logDiv.scrollTop = logDiv.scrollHeight;
+    }
+
+    async function createAllUsers() {
+      const supabaseUrl = document.getElementById('supabaseUrl').value;
+      const supabaseKey = document.getElementById('supabaseKey').value;
+      const adminPhone = document.getElementById('adminPhone').value;
+      const adminPassword = document.getElementById('adminPassword').value;
+
+      if (!supabaseUrl || !supabaseKey) {
+        alert('Please enter Supabase URL and Key');
+        return;
+      }
+
+      const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
+
+      document.getElementById('log').innerHTML = '';
+      credentials.length = 0;
+      log('Starting user creation for 17 technical companies...');
+
+      try {
+        log(`Logging in as admin: ${adminPhone}`);
+        const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+          phone: adminPhone,
+          password: adminPassword,
+        });
+
+        if (authError) {
+          log(`Login failed: ${authError.message}`, true);
+          return;
+        }
+
+        log('✓ Logged in successfully');
+
+        let successCount = 0;
+        let errorCount = 0;
+
+        for (const company of companies) {
+          try {
+            const password = 'GreenCo2025!';
+
+            log(`Creating user for: ${company.name} (${company.contact})...`);
+
+            const userData = {
+              phone: company.phone,
+              password: password,
+              full_name: company.contact,
+              role: 'technical',
+              company_id: company.id,
+              service_modules: ['technical']
+            };
+
+            const response = await fetch(`${supabaseUrl}/functions/v1/create-user`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${authData.session.access_token}`,
+              },
+              body: JSON.stringify(userData),
+            });
+
+            const result = await response.json();
+
+            if (response.ok) {
+              log(`✓ Created: ${company.name} - ${company.contact}`);
+              successCount++;
+              credentials.push({
+                company: company.name,
+                contact: company.contact,
+                phone: company.phone,
+                password: password,
+                role: 'technical'
+              });
+            } else {
+              log(`✗ Failed: ${company.name} - ${result.error || 'Unknown error'}`, true);
+              errorCount++;
+            }
+          } catch (err) {
+            log(`✗ Error creating user for ${company.name}: ${err.message}`, true);
+            errorCount++;
+          }
+        }
+
+        log(`\n=== SUMMARY ===`);
+        log(`Total companies: ${companies.length}`);
+        log(`✓ Success: ${successCount}`);
+        log(`✗ Failed: ${errorCount}`);
+        log(`\nAll passwords: GreenCo2025!`);
+
+        if (successCount > 0) {
+          displayCredentials();
+        }
+
+      } catch (error) {
+        log(`Fatal error: ${error.message}`, true);
+      }
+    }
+
+    function displayCredentials() {
+      const table = document.getElementById('credentialsTable');
+      const tbody = document.getElementById('credsBody');
+      tbody.innerHTML = '';
+
+      credentials.forEach(cred => {
+        const row = tbody.insertRow();
+        row.insertCell(0).textContent = cred.company;
+        row.insertCell(1).textContent = cred.contact;
+        row.insertCell(2).textContent = cred.phone;
+        row.insertCell(3).textContent = cred.password;
+        row.insertCell(4).textContent = cred.role;
+      });
+
+      table.style.display = 'block';
+    }
+  </script>
+</body>
+</html>
