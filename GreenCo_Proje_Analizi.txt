@@ -1,0 +1,112 @@
+# GreenCo Mobile Uygulaması - Detaylı Proje Analizi ve Rol Rehberi
+
+Bu doküman, GreenCo Mobile uygulamasının kapsamlı bir incelemesini, teknik altyapısını ve özellikle kullanıcı rollerinin sistemsel işleyişini detaylandırmak amacıyla hazırlanmıştır.
+
+================================================================================
+1. Proje Özeti ve Teknik Altyapı
+================================================================================
+
+GreenCo Mobile, şantiye yönetimi ve teknik servis operasyonlarını tek bir platformda birleştiren, kapsamlı bir saha yönetim uygulamasıdır.
+
+Teknolojiler:
+*   Mobil Uygulama: React Native (Expo Framework)
+*   Veritabanı ve Backend: Supabase (PostgreSQL, Auth, Edge Functions, Realtime)
+*   Dil: TypeScript
+
+Temel Modüller:
+Uygulama iki ana omurga üzerine kuruludur:
+1.  Personel Modülü: Şantiyelerdeki personelin takibi, QR ile mesai (puantaj) yönetimi ve hakedişlerin hesaplanması.
+2.  Teknik Servis Modülü: Arıza talepleri, teklif toplama (ihale usulü), servis yönetimi ve faturalandırma.
+
+================================================================================
+2. Kullanıcı Rolleri ve Detaylı Görev Tanımları
+================================================================================
+
+Sistemde hiyerarşik olarak yetkilendirilmiş 6 farklı kullanıcı rolü bulunmaktadır. Her rolün uygulama içerisinde erişebildiği ekranlar ve yapabildiği işlemler kesin çizgilerle ayrılmıştır.
+
+--------------------------------------------------------------------------------
+1. Admin (Sistem Yöneticisi)
+--------------------------------------------------------------------------------
+Sistemin "süper kullanıcısıdır". Her şeye yetkisi vardır.
+*   Ne Yapar?
+    *   Kurulum: Yeni şirketler, projeler ve kullanıcılar oluşturur.
+    *   Onay Mercii: Proje müdürlerinin ve Operasyon ekiplerinin kararlarını denetler, son onayı verir.
+    *   Teknik Servis İhalesi: Arıza talepleri için gelen teklifleri inceler ve müşteri için en uygun olanı seçer (Karar verici).
+    *   Finans: Hakedişleri ve faturaları ödenmiş (paid) olarak işaretler.
+*   Erişim: Tüm ekranlar (/admin rotası). Dashboard'da tüm sistemin özetini görür.
+
+--------------------------------------------------------------------------------
+2. Operations (Operasyon Yöneticisi)
+--------------------------------------------------------------------------------
+Genellikle merkez ofiste çalışan, finansal ve süreçsel akışı yöneten roldür.
+*   Ne Yapar?
+    *   Puantaj Kontrolü: Proje müdürlerinin onayladığı personellerin çalışma saatlerini kontrol eder.
+    *   Finansal Yönetim: Onaylanmış saatler üzerinden Hakediş (Invoice) oluşturur.
+    *   Teknik Servis: Tamamlanan servis işlerini onaylar ve bu işler için servis firmalarına fatura keser/oluşturur.
+*   Erişim: Finans ve Operasyon ekranları (/operations rotası). Proje detaylarını görür ama saha operasyonuna (vardiya atama vb.) doğrudan karışmaz, sonuçları yönetir.
+
+--------------------------------------------------------------------------------
+3. Project Manager (Proje Müdürü)
+--------------------------------------------------------------------------------
+Sahadan sorumlu, operasyonun kalbidir.
+*   Ne Yapar?
+    *   Ekip Yönetimi: Kendi projesine personel atar, vardiyalarını planlar.
+    *   Puantaj Onayı: İşçilerin QR ile yaptığı giriş-çıkışları kontrol eder. "Bu adam gerçekten çalıştı mı?" sorusunun cevabını verir. Performans notu (1-5 yıldız) verir.
+    *   Talep Açma: Şantiyede bir arıza varsa (örn: Klima bozuldu), teknik servis talebi oluşturur.
+    *   Kalite Kontrol: Yapılan teknik servisi denetler, "İş tamam" veya "Olmaış, tekrar yapın" der.
+*   Erişim: Sadece kendi atandığı projeler ve o projelerin personelleri (/manager rotası).
+
+--------------------------------------------------------------------------------
+4. Employee (Personel / İşçi)
+--------------------------------------------------------------------------------
+Sahada çalışan son kullanıcıdır. Uygulamayı en basit haliyle kullanır.
+*   Ne Yapar?
+    *   QR İşlemi: İşe geldiğinde şantiyedeki QR kodu okutur (Check-in), işten çıkarken tekrar okutur (Check-out).
+    *   Takip: Kendi vardiya listesini ve çalışma geçmişini görür.
+*   Erişim: Kısıtlı personel ekranları (/tabs rotası).
+
+--------------------------------------------------------------------------------
+Diğer Roller
+--------------------------------------------------------------------------------
+*   Technical Company (Teknik Servis Firması): Dışarıdan hizmet veren firmalar (örn: Kadıköy Klima). İhalelere teklif verirler, işi yapıp fotoğraf yüklerler.
+*   Technical (Teknik Okuyucu): Sadece teknik talepleri görüntüleyebilen ama müdahale edemeyen gözlemci rolü.
+
+================================================================================
+3. Sistem Nasıl Çalışıyor? (Örnek Senaryolar)
+================================================================================
+
+--------------------------------------------------------------------------------
+Senaryo A: Bir İşçinin Bir Günü (Personel Modülü)
+--------------------------------------------------------------------------------
+1.  Planlama (Admin/PM): Proje Müdürü, Ahmet Usta için sisteme bir vardiya girer (Yarın 08:00 - 17:00).
+2.  Giriş (Employee): Ahmet Usta şantiyeye gelir, uygulamayı açar ve duvardaki QR kodu okutur. Sistem GPS konumuna bakar, eğer şantiyedeyse girişi onaylar.
+3.  Çıkış (Employee): Mesai biter, Ahmet Usta çıkış QR'ını okutur. Sistem otomatik olarak "9 saat çalıştı" diye kaydeder.
+4.  Onay (PM): Proje Müdürü akşam sisteme girer, Ahmet Usta'nın kaydını görür, "Onaylıyorum, iyi çalıştı" diyerek 5 yıldız verir.
+5.  Ödeme (Operations): Operasyon yöneticisi ay sonunda "Bu ayki onaylanmış tüm saatleri hakedişe çevir" butonuna basar ve maaş hesabı çıkar.
+
+--------------------------------------------------------------------------------
+Senaryo B: Bir Klimanın Bozulması (Teknik Servis Modülü)
+--------------------------------------------------------------------------------
+1.  Talep (PM): Proje Müdürü, "Ofis kliması soğutmuyor" diye fotoğraflı bir talep açar.
+2.  İhale (Sistem): Sistem otomatik olarak bu talebi "Klima" işi yapan ve o bölgedeki (örn: Kadıköy) kayıtlı firmaların ekranına düşürür.
+3.  Teklif (Tech Company): Firmalar teklif verir:
+    *   A Firması: "1000 TL'ye yaparım." (Quote)
+    *   B Firması: "Gelip bakmam lazım, servis ücretim 500 TL." (Diagnostic)
+4.  Seçim (Admin): Admin teklifleri görür, A firmasını uygun bulur ve onaylar. Firma seçilir.
+5.  Tamamlama (Tech Company): A Firması gelir, klimayı yapar, tamir edilmiş halinin fotoğrafını yükler ve "Bitti" der.
+6.  Kontrol (PM): Proje Müdürü uygulamadan bakar, "Evet soğutuyor" der ve işi onaylar.
+
+================================================================================
+4. Dosya Yapısı ve Kod Organizasyonu
+================================================================================
+Yazılımcı gözüyle projenin haritası:
+
+*   app/admin: Admin paneli ekranları.
+*   app/manager: Proje müdürü ekranları.
+*   app/operations: Operasyon yöneticisi ekranları.
+*   app/(tabs): Personel (Employee) ekranları.
+*   app/technical-company: Servis firmalarının kullandığı portal.
+*   components/: Ortak kullanılan buton, kart, liste bileşenleri.
+*   supabase/: Veritabanı tabloları ve backend fonksiyonları.
+
+Proje, Role-Based Routing (Role dayalı yönlendirme) kullanır. Kullanıcı giriş yaptığında profiles tablosundaki rolüne bakılır ve otomatik olarak ilgili klasöre (/admin, /manager vb.) yönlendirilir.
