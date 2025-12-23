@@ -39,6 +39,7 @@ export default function TabsLayout() {
           borderTopColor: '#e5e7eb',
           height: 65,
           paddingBottom: 8,
+          display: isAdmin ? 'none' : 'flex',
         },
         tabBarLabelStyle: {
           fontSize: 11,

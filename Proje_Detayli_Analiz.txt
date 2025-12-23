@@ -1,0 +1,198 @@
+# GreenCo Mobile - Detaylı Proje Analizi ve Route Şeması
+
+Bu döküman, projenin **A'dan Z'ye** tüm teknik yapısını, sayfa akışlarını, bileşen kullanımlarını ve yetki mantığını en ince detayına kadar açıklar.
+
+---
+
+## 1. Genel Mimari ve Route Şeması
+
+Uygulama **Expo Router** ("Dosya tabanlı yönlendirme") kullanır. `app/` klasörü altındaki her dosya bir sayfadır.
+
+### Tam Route Ağacı
+
+```
+app/
+├── _layout.tsx                 (Ana Kök Layout - Tüm sayfaları kapsar)
+├── index.tsx                   (Karşılama / Yönlendirme logic'i)
+├── +not-found.tsx              (404 Sayfası)
+├── bans.tsx                    (Yasaklı Kullanıcı Ekranı)
+│
+├── (auth)/                     (Kimlik Doğrulama Grubu)
+│   ├── _layout.tsx             (Auth Layout)
+│   ├── sign-in.tsx             (Giriş Ekranı)
+│   └── role-select.tsx         (Rol Seçim Ekranı)
+│
+├── (tabs)/                     (Personel / Standart Kullanıcı Arayüzü)
+│   ├── _layout.tsx             (Alt Tab Menü Tanımları)
+│   ├── index.tsx               (QR Tarama / Ana Sayfa)
+│   ├── personnel.tsx           (Personel Listesi - PM için)
+│   ├── approvals.tsx           (Onaylar - PM için)
+│   ├── requests.tsx            (Talepler - Ops/Admin için)
+│   └── profile.tsx             (Profil Ayarları)
+│
+├── admin/                      (Yönetici Modülü)
+│   ├── dashboard.tsx           (Admin Ana Panel)
+│   ├── companies.tsx           (Firma Yönetimi - CRUD)
+│   ├── projects.tsx            (Proje Yönetimi)
+│   ├── users.tsx               (Kullanıcı Yönetimi)
+│   ├── invoices.tsx            (Hakediş Yönetimi)
+│   └── ... (diğer alt sayfalar)
+│
+├── manager/                    (Proje Yöneticisi Modülü)
+│   ├── dashboard.tsx           (PM Ana Panel)
+│   ├── projects.tsx            (Projeler Listesi)
+│   ├── project-detail.tsx      (Proje Detayı & QR)
+│   └── ...
+│
+├── operations/                 (Operasyon Modülü)
+│   ├── dashboard.tsx           (Ops Ana Panel)
+│   ├── timesheets.tsx          (Puantaj Yönetimi)
+│   ├── invoices.tsx            (Hakediş Onaylama)
+│   └── ...
+│
+└── technical/                  (Teknik Servis Modülü)
+    ├── requests.tsx            (Arıza Talepleri Listesi)
+    ├── create-request.tsx      (Yeni Arıza Talebi)
+    ├── request-detail.tsx      (Talep Detayı)
+    └── ...
+```
+
+---
+
+## 2. Kritik Bileşenler (Components) ve Görevleri
+
+Sayfalar bu bileşenleri yapboz parçaları gibi kullanır.
+
+### `components/InputGroup.tsx`
+*   **Görevi:** Standart, ikonlu, etiketli metin giriş kutusu oluşturur.
+*   **Kullanıldığı Yerler:** `sign-in.tsx` (Kullanıcı adı/şifre), `admin/companies.tsx` (Firma formu).
+*   **Özellikleri (Props):**
+    *   `icon`: Sol tarafta çıkacak ikon (Lucide icon).
+    *   `label`: Kutunun üstündeki başlık.
+    *   `value` & `onChangeText`: React state'ini bağlamak için.
+    *   `secureTextEntry`: Şifre gizlemek için (yıldızlı gösterim).
+
+### `components/FilterableDropdown.tsx`
+*   **Görevi:** İçinde arama yapılabilen, seçilebilir liste (Select Box). Ayrıca "Yeni Ekle" özelliği vardır.
+*   **Kullanıldığı Yerler:** `technical/create-request.tsx` (Marka seçimi, Arıza tipi seçimi).
+*   **Çalışma Mantığı:**
+    *   Tıklanınca bir `Modal` (tam ekran pencere) açar.
+    *   Listeyi `FlatList` ile gösterir.
+    *   Arama kutusuna yazılan metne göre listeyi `filter()` eder.
+    *   Eğer aranan şey yoksa ve izin verilmişse `+ Ekle` butonu çıkar.
+
+### `components/GreencoLogo.tsx`
+*   **Görevi:** Uygulama logosunu tutarlı boyutlarda (small, medium, large) gösterir.
+*   **Kullanıldığı Yerler:** `sign-in.tsx`, `role-select.tsx`, Tüm dashboard'ların alt kısmı.
+
+---
+
+## 3. Sayfa Sayfa Detaylı Analiz
+
+### 3.1 Kimlik Doğrulama (`app/(auth)`)
+
+#### `app/(auth)/sign-in.tsx` (Giriş Ekranı)
+*   **Amacı:** Kullanıcının telefon ve şifre ile sisteme girmesini sağlar.
+*   **Akış (Mantık):**
+    1.  Sayfa açılır, kullanıcı Telefon no girer (`InputGroup` kullanılır).
+    2.  `handlePhoneSubmit` fonksiyonu çalışır, numara uzunluğunu kontrol eder.
+    3.  Şifre alanı açılır (`step` state'i değişir).
+    4.  "Giriş Yap" butonuna basınca `AuthContext.signInWithPassword` fonksiyonu çağrılır.
+    5.  Başarılıysa `app/_layout.tsx` otomatik olarak kullanıcıyı `role-select`'e veya ana sayfaya atar.
+*   **Kullandığı Bileşenler:** `InputGroup`, `GreencoLogo`, `KeyboardAvoidingView` (Klavye açılınca ekranı kaydırmak için).
+
+#### `app/(auth)/role-select.tsx` (Rol Seçimi)
+*   **Amacı:** Tek bir kullanıcının birden fazla şöförü/rolü olabilir (Hem Yönetici hem Personel olabilir). Hangi ekranı görmek istediğini buradan seçer.
+*   **Mantık:**
+    *   `AuthContext`'ten kullanıcı profilini (`profile`) çeker.
+    *   `roles` dizisini filtreler: "Bu kullanıcı Admin mi? Evet -> Listeye ekle".
+    *   Eğer sadece 1 rol varsa, kullanıcıya sormadan direkt o sayfaya yönlendirir (`useEffect` içinde).
+
+### 3.2 Yönetici Paneli (`app/admin`)
+
+#### `app/admin/dashboard.tsx`
+*   **Görevi:** Sistemin kuş bakışı özetini gösterir.
+*   **Gösterilen Veriler:**
+    *   Toplam Personel (Supabase `profiles` tablosundan sayım).
+    *   Aktif Projeler (Supabase `projects_greenco` tablosundan).
+    *   Gelir Durumu (`invoices` tablosu).
+    *   Grafikler (Son 6 ayın gelirini `View` bileşenlerinin boyunu değiştirerek çizer).
+*   **Bileşen İlişkisi:**
+    *   Sayfa içinde `components/AdminDashboard.tsx` çağrılmaz, bu dosya **kendisi** o dashboard'dur.
+    *   Filtreleme için yerel bir `Modal` kullanır (Müşteri/Proje seçimi).
+
+#### `app/admin/companies.tsx` (Firma Yönetimi)
+*   **Görevi:** Taşeron veya Müşteri firmalarını Ekle/Sil/Düzenle.
+*   **Akış:**
+    *   Sayfa açılınca `supabase.from('companies').select('*')` ile listeyi çeker.
+    *   "+" butonuna basınca `modalVisible = true` olur ve form açılır.
+    *   Formda `InputGroup`lar (Ad, Vergi No, Adres) doldurulur.
+    *   "Kaydet" butonuna basınca:
+        *   ID varsa `update` sorgusu çalışır.
+        *   ID yoksa `insert` sorgusu çalışır.
+    *   Silme işlemi için `Alert.alert` ile "Emin misiniz?" onayı alınır.
+
+### 3.3 Proje Yöneticisi (`app/manager`)
+
+#### `app/manager/dashboard.tsx`
+*   **Görevi:** Yöneticinin sorumlu olduğu projelerin durumunu gösterir.
+*   **Mantık:**
+    *   Sadece oturum açan yöneticinin atandığı projeleri (`project_managers` tablosu) sorgular.
+    *   "Giriş Yapmayan Personel" sayısını hesaplar: (Toplam Atanan - Bugün QR Okutan).
+    *   "Ayın Personeli"ni hesaplar: En yüksek puanı alan ve en çok gelen kişiyi bulur.
+
+#### `app/manager/project-detail.tsx`
+*   **Görevi:** Bir projenin iç detay sayfası.
+*   **Özellikleri:**
+    *   **QR Kod Üretme:** `expo-location` ile GPS verisini alır, şifreli bir QR kod yaratır. Personel bunu okutur.
+    *   **Personel Listesi:** O projede çalışanları listeler.
+    *   **Puantaj Onayı:** Buradan personelin çalışma saatlerini görüp onaylar.
+
+### 3.4 Operasyon (`app/operations`)
+
+#### `app/operations/dashboard.tsx`
+*   **Görevi:** Finansal ve operasyonel takip.
+*   **Özellikleri:**
+    *   Fatura edilmemiş (Bekleyen) işleri gösterir.
+    *   Personel taleplerini (Onay/Red oranı) gösterir.
+*   **Erişim:** Sadece `role: operations` olanlar girebilir.
+
+### 3.5 Teknik Servis (`app/technical`)
+
+#### `app/technical/create-request.tsx` (Yeni Arıza Talebi)
+*   **Görevi:** En karmaşık form ekranıdır.
+*   **Akış:**
+    1.  **Firma Seçimi:** Kullanıcı bir firma seçer.
+    2.  **Proje Seçimi:** Seçilen firmaya ait projeler yüklenir.
+    3.  **Varlık/Lokasyon:** Arıza bir makinede mi (Asset) yoksa bir odada mı (Location)?
+        *   Asset seçilirse: Barkod okuma veya listeden seçme.
+        *   Location seçilirse: Oda/Kat bilgisi.
+    4.  **Medya:** Fotoğraf/Video çekme (`expo-image-picker` kullanır).
+    5.  **Kaydet:** Tüm veriyi ve resimleri Supabase'e yükler.
+*   **Kritik Bileşen:** `FilterableDropdown` burada çok yoğun kullanılır (Marka seçmek için, Model seçmek için).
+
+---
+
+## 4. Kullanıcı Rolleri ve Yetki Matrisi
+
+| Rol | Görebildiği Ekranlar (`app/...`) | Yapabildiği İşlemler |
+| :--- | :--- | :--- |
+| **Admin** | `/admin/*`, `/(tabs)/requests` | Her şeyi görür. Firma, Kullanıcı, Proje oluşturur/siler. |
+| **Project Manager** | `/manager/*`, `/(tabs)/personnel` | Sadece **kendi projelerini** görür. QR üretir, Puantaj onaylar. |
+| **Operations** | `/operations/*`, `/(tabs)/requests` | Hakedişleri görür ve onaylar (Ödeme yapamaz, sadece onaya sunar). |
+| **Technical** | `/technical/*` | Arıza talebi açar, teklifleri görür. |
+| **Personnel** | `/(tabs)/index` (QR), `profile` | Sadece QR okutur ve kendi geçmişini görür. Başka hiçbir şeye erişemez. |
+
+---
+
+## 5. Veri Akışı Örneği (Sign In -> Dashboard)
+
+1.  **Kullanıcı:** `sign-in.tsx`'te "Giriş Yap"a basar.
+2.  **App:** Supabase Auth ile token alır.
+3.  **AuthContext:** Token'ı hafızaya yazar, kullanıcı profilini (`profiles` tablosundan) çeker.
+4.  **Layout (`_layout.tsx`):** Kullanıcı değiştiği için yeniden render olur.
+5.  **RoleSelect (`role-select.tsx`):** Profili analiz eder. Kullanıcı "Admin" ise `/admin` butonunu gösterir.
+6.  **Yönlendirme:** Kullanıcı butona basar -> `router.push('/admin')`.
+7.  **AdminDashboard:** Sayfa yüklenir (`useEffect`), Supabase'den `projects` ve `invoices` sayılarını çeker ve ekrana basar.
+
+Bu döküman, projenin en güncel (Current State) teknik analizidir.

@@ -43,7 +43,9 @@ type CompanyInfo = {
 type Specialty = {
   technical_service_types: {
     name: string;
-  };
+  } | {
+    name: string;
+  }[];
 };
 
 export default function TechnicalCompanyProfile() {
@@ -112,6 +114,14 @@ export default function TechnicalCompanyProfile() {
   if (!companyInfo) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+            <ArrowLeft size={24} color={COLORS.secondary} />
+          </TouchableOpacity>
+          <View style={styles.headerContent}>
+            <Text style={styles.headerTitle}>Firma Profilim</Text>
+          </View>
+        </View>
         <View style={styles.emptyState}>
           <Building2 size={48} color={COLORS.textLight} />
           <Text style={styles.emptyTitle}>Firma Bilgisi Bulunamadı</Text>
@@ -243,14 +253,20 @@ export default function TechnicalCompanyProfile() {
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Uzmanlık Alanları</Text>
             <View style={styles.specialtiesGrid}>
-              {specialties.map((spec, index) => (
-                <View key={index} style={styles.specialtyBadge}>
-                  <Award size={16} color={COLORS.primary} />
-                  <Text style={styles.specialtyText}>
-                    {spec.technical_service_types.name}
-                  </Text>
-                </View>
-              ))}
+              {specialties.map((spec, index) => {
+                const typeName = Array.isArray(spec.technical_service_types)
+                  ? spec.technical_service_types[0]?.name
+                  : spec.technical_service_types?.name;
+
+                return (
+                  <View key={index} style={styles.specialtyBadge}>
+                    <Award size={16} color={COLORS.primary} />
+                    <Text style={styles.specialtyText}>
+                      {typeName || 'Bilinmiyor'}
+                    </Text>
+                  </View>
+                );
+              })}
             </View>
           </View>
         )}

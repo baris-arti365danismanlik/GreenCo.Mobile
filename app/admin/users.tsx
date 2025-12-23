@@ -440,12 +440,29 @@ export default function UsersManagement() {
         if (formData.role === 'project_manager') {
           await supabase.from('project_managers').delete().eq('manager_id', editingUser.id);
 
-          if (formData.project_ids.length > 0) {
-            const insertData = formData.project_ids.map(projectId => ({
-              project_id: projectId,
-              manager_id: editingUser.id,
-            }));
-            await supabase.from('project_managers').insert(insertData);
+          const insertData = formData.project_ids.map(projectId => ({
+            project_id: projectId,
+            manager_id: editingUser.id,
+          }));
+          await supabase.from('project_managers').insert(insertData);
+
+          // Ayrıca personel listesine de ekle (Varsa ekleme, yoksa ekle)
+          for (const projectId of formData.project_ids) {
+            const { data: existing } = await supabase
+              .from('project_assignments')
+              .select('id')
+              .eq('project_id', projectId)
+              .eq('personnel_id', editingUser.id)
+              .is('removed_at', null)
+              .maybeSingle();
+
+            if (!existing) {
+              await supabase.from('project_assignments').insert({
+                project_id: projectId,
+                personnel_id: editingUser.id,
+                assigned_at: new Date().toISOString(),
+              });
+            }
           }
         }
 
@@ -529,6 +546,14 @@ export default function UsersManagement() {
             manager_id: result.user_id,
           }));
           await supabase.from('project_managers').insert(insertData);
+
+          // Ayrıca personel listesine de ekle
+          const assignmentData = formData.project_ids.map(projectId => ({
+            project_id: projectId,
+            personnel_id: result.user_id,
+            assigned_at: new Date().toISOString(),
+          }));
+          await supabase.from('project_assignments').insert(assignmentData);
         }
 
         if (formData.role === 'personnel' && formData.personnel_type_ids.length > 0 && result.user_id) {

@@ -1,7 +1,7 @@
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { Users, Wrench, ChevronRight } from 'lucide-react-native';
+import { Users, Wrench, ChevronRight, User } from 'lucide-react-native';
 import { COLORS } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
 import { GreencoLogo } from '@/components/GreencoLogo';
@@ -34,7 +34,7 @@ const MODULES: ServiceModule[] = [
     icon: Wrench,
     color: '#2563eb',
     bgColor: '#dbeafe',
-    route: '/technical',
+    route: '/manager/technical-requests',
   },
 ];
 
@@ -60,12 +60,20 @@ export default function ManagerModuleSelect() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
+      <View style={styles.header}>
+        <View style={styles.headerLeft}>
+          <GreencoLogo size="small" variant="light" />
+        </View>
+        <TouchableOpacity
+          style={styles.profileButton}
+          onPress={() => router.push('/manager/profile')}
+        >
+          <User size={24} color={COLORS.secondary} />
+        </TouchableOpacity>
+      </View>
+
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.content}>
-          <View style={styles.logoContainer}>
-            <GreencoLogo size="medium" variant="light" />
-          </View>
-
           <Text style={styles.title}>Hoş Geldiniz</Text>
           <Text style={styles.subtitle}>{profile?.full_name || 'Kullanıcı'}</Text>
           <Text style={styles.description}>Kullanmak istediğiniz hizmeti seçin</Text>
@@ -106,6 +114,27 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.bg,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    paddingBottom: 10,
+  },
+  headerLeft: {
+    // Optional styling if need to adjust logo position
+  },
+  profileButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'white',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
   scrollContent: {
     flexGrow: 1,

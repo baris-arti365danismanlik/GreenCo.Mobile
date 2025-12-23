@@ -425,7 +425,7 @@ export default function BidsPage() {
                         {new Date(bid.created_at).toLocaleString('tr-TR')}
                       </Text>
 
-                      {isReadOnly && canApproveBids && bid.status === 'pending' && (
+                      {isReadOnly && canApproveBids && bid.status === 'pending' && requestStatus !== 'awaiting_customer_decision' && (
                         <TouchableOpacity
                           style={styles.acceptBtn}
                           onPress={() => handleAcceptBid(bid.id)}

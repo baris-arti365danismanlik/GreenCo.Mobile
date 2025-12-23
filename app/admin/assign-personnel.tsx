@@ -326,7 +326,7 @@ export default function AssignPersonnelScreen() {
         }
 
         alert('Başarılı! Tüm personel atamaları tamamlandı ve talep onaylandı.');
-        router.back();
+        router.push('/admin');
       } else {
         alert('Başarılı! Personeller projeye atandı.');
         setSelectedPosition(selectedPosition + 1);
@@ -367,7 +367,7 @@ export default function AssignPersonnelScreen() {
           </Text>
           <TouchableOpacity
             style={styles.backButton}
-            onPress={() => router.back()}
+            onPress={() => router.push('/admin')}
           >
             <Text style={styles.backButtonText}>Geri Dön</Text>
           </TouchableOpacity>
@@ -389,7 +389,7 @@ export default function AssignPersonnelScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
+        <TouchableOpacity onPress={() => router.push('/admin')}>
           <ArrowLeft size={24} color={COLORS.secondary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Personel Ata</Text>
@@ -401,210 +401,210 @@ export default function AssignPersonnelScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
       >
-      <ScrollView
-        style={styles.scrollContainer}
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.projectInfo}>
-          <Text style={styles.projectName}>{request.project_name}</Text>
-          <Text style={styles.positionInfo}>
-            Pozisyon {selectedPosition + 1} / {request.personnel_positions.length}
-          </Text>
-        </View>
-
-        <View style={styles.positionCard}>
-          <View style={styles.positionRow}>
-            <Briefcase size={18} color={COLORS.primary} />
-            <Text style={styles.positionLabel}>Meslek:</Text>
-            <Text style={styles.positionValue}>{positionType?.name || 'Bilinmiyor'}</Text>
-          </View>
-          {request.city && request.district && (
-            <View style={styles.positionRow}>
-              <MapPin size={18} color={COLORS.primary} />
-              <Text style={styles.positionLabel}>Konum:</Text>
-              <Text style={styles.positionValue}>{request.city}, {request.district}</Text>
-            </View>
-          )}
-          <View style={styles.positionRow}>
-            <UserPlus size={18} color={COLORS.primary} />
-            <Text style={styles.positionLabel}>Gerekli:</Text>
-            <Text style={styles.positionValue}>
-              {existingAssignedCount + request.personnel_positions.reduce((sum, pos) => sum + (pos.count || pos.quantity || 0), 0)} / {selectedPersonnel.length} seçildi
+        <ScrollView
+          style={styles.scrollContainer}
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.projectInfo}>
+            <Text style={styles.projectName}>{request.project_name}</Text>
+            <Text style={styles.positionInfo}>
+              Pozisyon {selectedPosition + 1} / {request.personnel_positions.length}
             </Text>
           </View>
-        </View>
 
-        <View style={styles.searchContainer}>
-          <Search size={20} color={COLORS.textLight} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Personel ara..."
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-          />
-        </View>
-
-        <View style={styles.filterContainer}>
-          <Text style={styles.filterTitle}>Filtreler:</Text>
-          <View style={styles.filterButtons}>
-            <TouchableOpacity
-              style={[styles.filterButton, filterByPosition && styles.filterButtonActive]}
-              onPress={() => setFilterByPosition(!filterByPosition)}
-            >
-              <Text style={[styles.filterButtonText, filterByPosition && styles.filterButtonTextActive]}>
-                Pozisyon: {positionType?.name || currentPosition?.position || currentPosition?.type || 'Tümü'}
+          <View style={styles.positionCard}>
+            <View style={styles.positionRow}>
+              <Briefcase size={18} color={COLORS.primary} />
+              <Text style={styles.positionLabel}>Meslek:</Text>
+              <Text style={styles.positionValue}>{positionType?.name || 'Bilinmiyor'}</Text>
+            </View>
+            {request.city && request.district && (
+              <View style={styles.positionRow}>
+                <MapPin size={18} color={COLORS.primary} />
+                <Text style={styles.positionLabel}>Konum:</Text>
+                <Text style={styles.positionValue}>{request.city}, {request.district}</Text>
+              </View>
+            )}
+            <View style={styles.positionRow}>
+              <UserPlus size={18} color={COLORS.primary} />
+              <Text style={styles.positionLabel}>Gerekli:</Text>
+              <Text style={styles.positionValue}>
+                {existingAssignedCount + request.personnel_positions.reduce((sum, pos) => sum + (pos.count || pos.quantity || 0), 0)} / {selectedPersonnel.length} seçildi
               </Text>
-            </TouchableOpacity>
+            </View>
           </View>
 
-          {availableCities.length > 0 && (
-            <View style={styles.dropdownContainer}>
-              <Text style={styles.dropdownLabel}>İl:</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.dropdownScroll}>
-                <TouchableOpacity
-                  style={[styles.dropdownButton, !selectedCity && styles.dropdownButtonActive]}
-                  onPress={() => {setSelectedCity(''); setSelectedDistrict('');}}
-                >
-                  <Text style={[styles.dropdownButtonText, !selectedCity && styles.dropdownButtonTextActive]}>
-                    Tümü
-                  </Text>
-                </TouchableOpacity>
-                {availableCities.map(city => (
-                  <TouchableOpacity
-                    key={city}
-                    style={[styles.dropdownButton, selectedCity === city && styles.dropdownButtonActive]}
-                    onPress={() => {setSelectedCity(city); setSelectedDistrict('');}}
-                  >
-                    <Text style={[styles.dropdownButtonText, selectedCity === city && styles.dropdownButtonTextActive]}>
-                      {city.charAt(0).toUpperCase() + city.slice(1)}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </View>
-          )}
-
-          {availableDistricts.length > 0 && (
-            <View style={styles.dropdownContainer}>
-              <Text style={styles.dropdownLabel}>İlçe:</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.dropdownScroll}>
-                <TouchableOpacity
-                  style={[styles.dropdownButton, !selectedDistrict && styles.dropdownButtonActive]}
-                  onPress={() => setSelectedDistrict('')}
-                >
-                  <Text style={[styles.dropdownButtonText, !selectedDistrict && styles.dropdownButtonTextActive]}>
-                    Tümü
-                  </Text>
-                </TouchableOpacity>
-                {availableDistricts.map(district => (
-                  <TouchableOpacity
-                    key={district}
-                    style={[styles.dropdownButton, selectedDistrict === district && styles.dropdownButtonActive]}
-                    onPress={() => setSelectedDistrict(district)}
-                  >
-                    <Text style={[styles.dropdownButtonText, selectedDistrict === district && styles.dropdownButtonTextActive]}>
-                      {district.charAt(0).toUpperCase() + district.slice(1)}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </View>
-          )}
-        </View>
-
-        <View style={styles.personnelList}>
-        <Text style={styles.sectionTitle}>
-          TÜM PERSONEL ({filteredPersonnel.length})
-        </Text>
-
-        {filteredPersonnel.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyText}>Bu kriterlere uygun personel bulunamadı</Text>
+          <View style={styles.searchContainer}>
+            <Search size={20} color={COLORS.textLight} />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Personel ara..."
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+            />
           </View>
-        ) : (
-          filteredPersonnel.map(person => {
-            const personnelTypeName = person.personnel_types && person.personnel_types.length > 0
-              ? person.personnel_types.map(pt => pt.name).join(', ')
-              : 'Meslek belirtilmemiş';
 
-            return (
+          <View style={styles.filterContainer}>
+            <Text style={styles.filterTitle}>Filtreler:</Text>
+            <View style={styles.filterButtons}>
               <TouchableOpacity
-                key={person.id}
-                style={[
-                  styles.personCard,
-                  selectedPersonnel.includes(person.id) && styles.personCardSelected,
-                ]}
-                onPress={() => togglePersonnelSelection(person.id)}
+                style={[styles.filterButton, filterByPosition && styles.filterButtonActive]}
+                onPress={() => setFilterByPosition(!filterByPosition)}
               >
-                <View style={styles.personCardLeft}>
-                  {person.avatar_url ? (
-                    <Image
-                      source={{ uri: person.avatar_url }}
-                      style={styles.avatar}
-                    />
-                  ) : (
-                    <View style={styles.avatarPlaceholder}>
-                      <User size={24} color={COLORS.textLight} />
-                    </View>
-                  )}
-
-                  <View style={styles.personInfo}>
-                    <Text style={styles.personName}>{person.full_name}</Text>
-
-                    <View style={styles.personMetaRow}>
-                      <Briefcase size={14} color={COLORS.primary} />
-                      <Text style={styles.personMeta}>{personnelTypeName}</Text>
-                    </View>
-
-                    {person.rating && (
-                      <View style={styles.personMetaRow}>
-                        <Star size={14} color="#FFB800" />
-                        <Text style={styles.personRating}>{person.rating.toFixed(1)}</Text>
-                      </View>
-                    )}
-
-                    {person.phone && (
-                      <Text style={styles.personDetail}>{person.phone}</Text>
-                    )}
-                    {person.city && person.district && (
-                      <View style={styles.personMetaRow}>
-                        <MapPin size={14} color={COLORS.textLight} />
-                        <Text style={styles.personDetail}>
-                          {person.city}, {person.district}
-                        </Text>
-                      </View>
-                    )}
-                    {person.assignedProjects && person.assignedProjects.length > 0 && (
-                      <Text style={styles.assignedProjectsText}>
-                        Atandığı projeler: {person.assignedProjects.join(', ')}
-                      </Text>
-                    )}
-                    {selectedPersonnel.includes(person.id) && personnelRates[person.id] && (
-                      <View style={styles.rateInfo}>
-                        {personnelRates[person.id].hourly && (
-                          <Text style={styles.rateText}>Saatlik Ücret: {personnelRates[person.id].hourly} ₺</Text>
-                        )}
-                        {personnelRates[person.id].daily && (
-                          <Text style={styles.rateText}>Günlük Ücret: {personnelRates[person.id].daily} ₺</Text>
-                        )}
-                      </View>
-                    )}
-                  </View>
-                </View>
-
-                {selectedPersonnel.includes(person.id) && (
-                  <View style={styles.checkmark}>
-                    <Text style={styles.checkmarkText}>✓</Text>
-                  </View>
-                )}
+                <Text style={[styles.filterButtonText, filterByPosition && styles.filterButtonTextActive]}>
+                  Pozisyon: {positionType?.name || currentPosition?.position || currentPosition?.type || 'Tümü'}
+                </Text>
               </TouchableOpacity>
-            );
-          })
-        )}
-        </View>
-      </ScrollView>
+            </View>
+
+            {availableCities.length > 0 && (
+              <View style={styles.dropdownContainer}>
+                <Text style={styles.dropdownLabel}>İl:</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.dropdownScroll}>
+                  <TouchableOpacity
+                    style={[styles.dropdownButton, !selectedCity && styles.dropdownButtonActive]}
+                    onPress={() => { setSelectedCity(''); setSelectedDistrict(''); }}
+                  >
+                    <Text style={[styles.dropdownButtonText, !selectedCity && styles.dropdownButtonTextActive]}>
+                      Tümü
+                    </Text>
+                  </TouchableOpacity>
+                  {availableCities.map(city => (
+                    <TouchableOpacity
+                      key={city}
+                      style={[styles.dropdownButton, selectedCity === city && styles.dropdownButtonActive]}
+                      onPress={() => { setSelectedCity(city); setSelectedDistrict(''); }}
+                    >
+                      <Text style={[styles.dropdownButtonText, selectedCity === city && styles.dropdownButtonTextActive]}>
+                        {city.charAt(0).toUpperCase() + city.slice(1)}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
+
+            {availableDistricts.length > 0 && (
+              <View style={styles.dropdownContainer}>
+                <Text style={styles.dropdownLabel}>İlçe:</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.dropdownScroll}>
+                  <TouchableOpacity
+                    style={[styles.dropdownButton, !selectedDistrict && styles.dropdownButtonActive]}
+                    onPress={() => setSelectedDistrict('')}
+                  >
+                    <Text style={[styles.dropdownButtonText, !selectedDistrict && styles.dropdownButtonTextActive]}>
+                      Tümü
+                    </Text>
+                  </TouchableOpacity>
+                  {availableDistricts.map(district => (
+                    <TouchableOpacity
+                      key={district}
+                      style={[styles.dropdownButton, selectedDistrict === district && styles.dropdownButtonActive]}
+                      onPress={() => setSelectedDistrict(district)}
+                    >
+                      <Text style={[styles.dropdownButtonText, selectedDistrict === district && styles.dropdownButtonTextActive]}>
+                        {district.charAt(0).toUpperCase() + district.slice(1)}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
+          </View>
+
+          <View style={styles.personnelList}>
+            <Text style={styles.sectionTitle}>
+              TÜM PERSONEL ({filteredPersonnel.length})
+            </Text>
+
+            {filteredPersonnel.length === 0 ? (
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyText}>Bu kriterlere uygun personel bulunamadı</Text>
+              </View>
+            ) : (
+              filteredPersonnel.map(person => {
+                const personnelTypeName = person.personnel_types && person.personnel_types.length > 0
+                  ? person.personnel_types.map(pt => pt.name).join(', ')
+                  : 'Meslek belirtilmemiş';
+
+                return (
+                  <TouchableOpacity
+                    key={person.id}
+                    style={[
+                      styles.personCard,
+                      selectedPersonnel.includes(person.id) && styles.personCardSelected,
+                    ]}
+                    onPress={() => togglePersonnelSelection(person.id)}
+                  >
+                    <View style={styles.personCardLeft}>
+                      {person.avatar_url ? (
+                        <Image
+                          source={{ uri: person.avatar_url }}
+                          style={styles.avatar}
+                        />
+                      ) : (
+                        <View style={styles.avatarPlaceholder}>
+                          <User size={24} color={COLORS.textLight} />
+                        </View>
+                      )}
+
+                      <View style={styles.personInfo}>
+                        <Text style={styles.personName}>{person.full_name}</Text>
+
+                        <View style={styles.personMetaRow}>
+                          <Briefcase size={14} color={COLORS.primary} />
+                          <Text style={styles.personMeta}>{personnelTypeName}</Text>
+                        </View>
+
+                        {person.rating && (
+                          <View style={styles.personMetaRow}>
+                            <Star size={14} color="#FFB800" />
+                            <Text style={styles.personRating}>{person.rating.toFixed(1)}</Text>
+                          </View>
+                        )}
+
+                        {person.phone && (
+                          <Text style={styles.personDetail}>{person.phone}</Text>
+                        )}
+                        {person.city && person.district && (
+                          <View style={styles.personMetaRow}>
+                            <MapPin size={14} color={COLORS.textLight} />
+                            <Text style={styles.personDetail}>
+                              {person.city}, {person.district}
+                            </Text>
+                          </View>
+                        )}
+                        {person.assignedProjects && person.assignedProjects.length > 0 && (
+                          <Text style={styles.assignedProjectsText}>
+                            Atandığı projeler: {person.assignedProjects.join(', ')}
+                          </Text>
+                        )}
+                        {selectedPersonnel.includes(person.id) && personnelRates[person.id] && (
+                          <View style={styles.rateInfo}>
+                            {personnelRates[person.id].hourly && (
+                              <Text style={styles.rateText}>Saatlik Ücret: {personnelRates[person.id].hourly} ₺</Text>
+                            )}
+                            {personnelRates[person.id].daily && (
+                              <Text style={styles.rateText}>Günlük Ücret: {personnelRates[person.id].daily} ₺</Text>
+                            )}
+                          </View>
+                        )}
+                      </View>
+                    </View>
+
+                    {selectedPersonnel.includes(person.id) && (
+                      <View style={styles.checkmark}>
+                        <Text style={styles.checkmarkText}>✓</Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                );
+              })
+            )}
+          </View>
+        </ScrollView>
       </KeyboardAvoidingView>
 
       <View style={styles.footer}>

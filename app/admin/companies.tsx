@@ -27,6 +27,7 @@ type Company = {
   contact_person: string | null;
   contact_email: string | null;
   contact_phone: string | null;
+  commission_rate: number | null;
   is_active: boolean;
 };
 
@@ -50,6 +51,7 @@ export default function CompaniesManagement() {
     contact_person: '',
     contact_email: '',
     contact_phone: '',
+    commission_rate: '',
   });
 
   const [saving, setSaving] = useState(false);
@@ -106,6 +108,7 @@ export default function CompaniesManagement() {
         contact_person: company.contact_person || '',
         contact_email: company.contact_email || '',
         contact_phone: company.contact_phone || '',
+        commission_rate: company.commission_rate ? (company.commission_rate * 100).toString() : '',
       });
     } else {
       setEditingCompany(null);
@@ -116,6 +119,7 @@ export default function CompaniesManagement() {
         contact_person: '',
         contact_email: '',
         contact_phone: '',
+        commission_rate: '',
       });
     }
     setModalVisible(true);
@@ -138,6 +142,10 @@ export default function CompaniesManagement() {
     try {
       setSaving(true);
       await forceRefreshSession();
+
+      // Kullanıcının girdiği yüzdeyi (örn: 10) ondalığa çevir (0.10)
+      const commissionRate = formData.commission_rate ? parseFloat(formData.commission_rate) / 100 : null;
+
       if (editingCompany) {
         const { error } = await supabase
           .from('companies')
@@ -148,6 +156,7 @@ export default function CompaniesManagement() {
             contact_person: formData.contact_person || null,
             contact_email: formData.contact_email || null,
             contact_phone: formData.contact_phone || null,
+            commission_rate: commissionRate,
           })
           .eq('id', editingCompany.id);
 
@@ -162,6 +171,7 @@ export default function CompaniesManagement() {
             contact_person: formData.contact_person || null,
             contact_email: formData.contact_email || null,
             contact_phone: formData.contact_phone || null,
+            commission_rate: commissionRate,
           });
 
         if (companyError) throw companyError;
@@ -271,6 +281,9 @@ export default function CompaniesManagement() {
               <View style={styles.companyInfo}>
                 <Text style={styles.companyName}>{company.name}</Text>
                 <Text style={styles.companyTax}>VN: {company.tax_number}</Text>
+                {company.commission_rate && (
+                  <Text style={styles.companyContact}>Komisyon: %{company.commission_rate * 100}</Text>
+                )}
                 {company.contact_person && (
                   <Text style={styles.companyContact}>{company.contact_person}</Text>
                 )}
@@ -313,6 +326,13 @@ export default function CompaniesManagement() {
               />
 
               <InputGroup
+                placeholder="Komisyon Oranı (%)"
+                value={formData.commission_rate}
+                onChangeText={(text) => setFormData({ ...formData, commission_rate: text })}
+                keyboardType="numeric"
+              />
+
+              <InputGroup
                 placeholder="Adres"
                 value={formData.address}
                 onChangeText={(text) => setFormData({ ...formData, address: text })}
@@ -338,6 +358,7 @@ export default function CompaniesManagement() {
                 keyboardType="phone-pad"
               />
             </ScrollView>
+
 
             <View style={styles.modalActions}>
               <TouchableOpacity

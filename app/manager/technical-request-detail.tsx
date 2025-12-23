@@ -6,6 +6,8 @@ import {
   TouchableOpacity,
   ScrollView,
   ActivityIndicator,
+  Alert,
+  Platform,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { supabase } from '@/lib/supabase';
@@ -20,6 +22,8 @@ import {
   Calendar,
   AlertCircle,
   Clock,
+  CheckCircle,
+  XCircle,
 } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -67,6 +71,7 @@ export default function TechnicalRequestDetail() {
   const [loading, setLoading] = useState(true);
   const [request, setRequest] = useState<Request | null>(null);
   const [bids, setBids] = useState<Bid[]>([]);
+  const [updating, setUpdating] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -90,22 +95,33 @@ export default function TechnicalRequestDetail() {
       if (error) throw error;
       setRequest(data);
 
-      if (data?.status === 'awaiting_customer_decision') {
-        const { data: bidsData } = await supabase
+      if (data) {
+        let shouldFetchBids = false;
+        let query = supabase
           .from('technical_service_bids')
           .select(`
             *,
             technical_service_companies(id, company_name)
           `)
           .eq('request_id', id)
-          .eq('selected_for_customer', true)
           .order('created_at', { ascending: true });
 
-        setBids(bidsData || []);
+        if (data.status === 'awaiting_customer_decision') {
+          query = query.eq('selected_for_customer', true);
+          shouldFetchBids = true;
+        } else if (['approved', 'in_progress', 'completed'].includes(data.status)) {
+          query = query.eq('status', 'accepted');
+          shouldFetchBids = true;
+        }
+
+        if (shouldFetchBids) {
+          const { data: bidsData } = await query;
+          setBids(bidsData || []);
+        }
       }
     } catch (error) {
       console.error('Error loading request:', error);
-      window.alert('Hata: Talep yüklenirken hata oluştu');
+      Alert.alert('Hata', 'Talep yüklenirken hata oluştu');
       router.back();
     } finally {
       setLoading(false);
@@ -122,13 +138,13 @@ export default function TechnicalRequestDetail() {
       pending_review: 'İnceleme Bekliyor',
       info_needed: 'Bilgi Bekleniyor',
       bidding: 'Teklif Toplanıyor',
-      awaiting_customer_decision: 'Operasyon Onayı Bekleniyor',
+      awaiting_customer_decision: 'Fiyat Teklifi Verildi',
       awaiting_additional_info: 'Ek Bilgi Bekleniyor',
       diagnostic_in_progress: 'Tanı Yapılıyor',
       approved: 'Onaylandı',
       in_progress: 'Devam Ediyor',
       completed: 'Tamamlandı',
-      cancelled: 'İptal Edildi',
+      cancelled: 'Reddedildi',
     };
     return labels[status] || status;
   };
@@ -147,6 +163,124 @@ export default function TechnicalRequestDetail() {
       cancelled: '#ef4444',
     };
     return colors[status] || '#f59e0b';
+  };
+
+  const handleApprove = async () => {
+    let confirmed = false;
+
+    if (Platform.OS === 'web') {
+      confirmed = window.confirm('Bu teklifi onaylıyor musunuz? İşlem başlatılacaktır.');
+    } else {
+      confirmed = await new Promise((resolve) => {
+        Alert.alert(
+          'Onay',
+          'Bu teklifi onaylıyor musunuz? İşlem başlatılacaktır.',
+          [
+            { text: 'İptal', onPress: () => resolve(false), style: 'cancel' },
+            { text: 'Onayla', onPress: () => resolve(true) },
+          ]
+        );
+      });
+    }
+
+    if (!confirmed) return;
+
+    try {
+      setUpdating(true);
+
+      // 1. Get selected bids
+      const selectedBids = bids.filter(b => b.selected_for_customer);
+      const selectedBidIds = selectedBids.map(b => b.id);
+
+      if (selectedBidIds.length === 0) {
+        Alert.alert('Hata', 'Onaylanacak seçili teklif bulunamadı.');
+        return;
+      }
+
+      // 2. Accept selected bids
+      const { error: acceptError } = await supabase
+        .from('technical_service_bids')
+        .update({ status: 'accepted' })
+        .in('id', selectedBidIds);
+
+      if (acceptError) throw acceptError;
+
+      // 3. Reject other bids for this request
+      const { error: rejectError } = await supabase
+        .from('technical_service_bids')
+        .update({ status: 'rejected' })
+        .eq('request_id', id)
+        .not('id', 'in', `(${selectedBidIds.join(',')})`); // exclude selected
+
+      if (rejectError) console.warn('Error rejecting other bids:', rejectError);
+
+      // 4. Update Request Status to 'approved'
+      const { error } = await supabase
+        .from('technical_service_requests')
+        .update({
+          status: 'approved',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', id);
+
+      if (error) throw error;
+
+      Alert.alert('Başarılı', 'Teklif onaylandı.');
+      // Refresh logic or Back
+      router.back();
+    } catch (error) {
+      console.error('Error approving request:', error);
+      Alert.alert('Hata', 'İşlem başarısız oldu');
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const handleReject = async () => {
+    let confirmed = false;
+
+    if (Platform.OS === 'web') {
+      confirmed = window.confirm('Bu teklifi reddetmek üzeresiniz. Emin misiniz?');
+    } else {
+      confirmed = await new Promise((resolve) => {
+        Alert.alert(
+          'Red',
+          'Bu teklifi reddetmek üzeresiniz. Emin misiniz?',
+          [
+            { text: 'İptal', onPress: () => resolve(false), style: 'cancel' },
+            { text: 'Reddet', onPress: () => resolve(true), style: 'destructive' },
+          ]
+        );
+      });
+    }
+
+    if (!confirmed) return;
+
+    try {
+      setUpdating(true);
+      // For now, rejecting sets it back to cancelled or notifies admin. 
+      // Let's set to cancelled for simplicity as per requirements usually, 
+      // or 'pending_review' if they want new bids. 
+      // Based on context, 'cancelled' is safer, or maybe just alert.
+      // Let's set to 'cancelled' to stop the process.
+      const { error } = await supabase
+        .from('technical_service_requests')
+        .update({
+          status: 'cancelled',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', id);
+
+      if (error) throw error;
+
+      Alert.alert('Bilgi', 'Talep iptal edildi.');
+      router.back();
+    } catch (error) {
+      console.error('Error rejecting request:', error);
+      Alert.alert('Hata', 'İşlem başarısız oldu');
+    } finally {
+      setUpdating(false);
+    }
   };
 
   if (loading) {
@@ -269,69 +403,41 @@ export default function TechnicalRequestDetail() {
           </View>
         )}
 
-        {isAwaitingCustomerDecision && (
-          <View style={styles.infoCard}>
-            <AlertCircle size={20} color="#8b5cf6" />
-            <View style={styles.infoCardContent}>
-              <Text style={styles.infoCardTitle}>Operasyon Değerlendirmesinde</Text>
-              <Text style={styles.infoCardText}>
-                Alınan teklifler operasyon yöneticisi tarafından değerlendiriliyor. Uygun teklif
-                seçildikten sonra sizinle iletişime geçilecektir.
-              </Text>
-            </View>
-          </View>
-        )}
-
-        {isAwaitingCustomerDecision && bids.length > 0 && (
+        {(isAwaitingCustomerDecision || ['approved', 'in_progress', 'completed'].includes(request.status)) && bids.length > 0 && (
           <>
             {quoteBids.length > 0 && (
               <View style={styles.bidsSection}>
                 <View style={styles.bidsSectionHeader}>
                   <DollarSign size={20} color={COLORS.primary} />
                   <Text style={styles.bidsSectionTitle}>
-                    Tamir Teklifleri ({quoteBids.length})
+                    {isAwaitingCustomerDecision ? `Tamir Teklifleri (${quoteBids.length})` : 'Kabul Edilen Fiyat Teklifi'}
                   </Text>
                 </View>
 
                 {quoteBids.map((bid) => (
                   <View key={bid.id} style={styles.bidCard}>
                     <View style={styles.bidHeader}>
-                      <Text style={styles.companyName}>Greenco Yetkili Servis</Text>
-                    </View>
-
-                    <View style={styles.priceSection}>
-                      <View style={styles.priceRow}>
-                        <Text style={styles.priceLabel}>Hizmet Bedeli:</Text>
-                        <Text style={styles.priceValue}>
-                          {new Intl.NumberFormat('tr-TR', {
-                            style: 'currency',
-                            currency: 'TRY',
-                            minimumFractionDigits: 0,
-                          }).format(bid.proposed_price || 0)}
-                        </Text>
-                      </View>
-                      {commissionRate > 0 && (
-                        <View style={styles.priceRow}>
-                          <Text style={styles.priceLabel}>Greenco Hizmet Bedeli:</Text>
-                          <Text style={styles.priceValue}>
-                            {new Intl.NumberFormat('tr-TR', {
-                              style: 'currency',
-                              currency: 'TRY',
-                              minimumFractionDigits: 0,
-                            }).format((bid.proposed_price || 0) * commissionRate)}
-                          </Text>
+                      <Text style={styles.companyName}>
+                        {bid.technical_service_companies?.company_name || 'Greenco Yetkili Servis'}
+                      </Text>
+                      {!isAwaitingCustomerDecision && (
+                        <View style={{ backgroundColor: '#dcfce7', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12 }}>
+                          <Text style={{ color: '#166534', fontSize: 12, fontWeight: '600' }}>Kabul Edildi</Text>
                         </View>
                       )}
-                      <View style={[styles.priceRow, styles.totalPriceRow]}>
-                        <Text style={styles.totalLabel}>Toplam:</Text>
-                        <Text style={styles.totalPrice}>
-                          {new Intl.NumberFormat('tr-TR', {
-                            style: 'currency',
-                            currency: 'TRY',
-                            minimumFractionDigits: 0,
-                          }).format(calculateTotalPrice(bid.proposed_price, commissionRate))}
-                        </Text>
-                      </View>
+                    </View>
+
+                    <View style={[styles.priceRow, styles.totalPriceRow, { marginTop: 0, borderTopWidth: 0, paddingTop: 0 }]}>
+                      <Text style={styles.totalLabel}>
+                        {isAwaitingCustomerDecision ? 'Müşteriye Sunulacak Tutar:' : 'Anlaşılan Tutar:'}
+                      </Text>
+                      <Text style={styles.totalPrice}>
+                        {new Intl.NumberFormat('tr-TR', {
+                          style: 'currency',
+                          currency: 'TRY',
+                          minimumFractionDigits: 0,
+                        }).format(calculateTotalPrice(bid.bid_amount, commissionRate))}
+                      </Text>
                     </View>
 
                     {bid.estimated_duration && (
@@ -351,47 +457,34 @@ export default function TechnicalRequestDetail() {
                 <View style={styles.bidsSectionHeader}>
                   <Stethoscope size={20} color="#6366f1" />
                   <Text style={styles.bidsSectionTitle}>
-                    Tanı Servisi Teklifleri ({diagnosticBids.length})
+                    {isAwaitingCustomerDecision ? `Tanı Servisi Teklifleri (${diagnosticBids.length})` : 'Kabul Edilen Tanı Servisi'}
                   </Text>
                 </View>
 
                 {diagnosticBids.map((bid) => (
                   <View key={bid.id} style={[styles.bidCard, { borderColor: '#6366f1' }]}>
                     <View style={styles.bidHeader}>
-                      <Text style={styles.companyName}>Greenco Yetkili Servis</Text>
+                      <Text style={styles.companyName}>
+                        {bid.technical_service_companies?.company_name || 'Greenco Yetkili Servis'}
+                      </Text>
+                      {!isAwaitingCustomerDecision && (
+                        <View style={{ backgroundColor: '#dcfce7', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12 }}>
+                          <Text style={{ color: '#166534', fontSize: 12, fontWeight: '600' }}>Kabul Edildi</Text>
+                        </View>
+                      )}
                     </View>
 
                     <View style={styles.priceSection}>
-                      <View style={styles.priceRow}>
-                        <Text style={styles.priceLabel}>Tanı Servisi Bedeli:</Text>
-                        <Text style={styles.priceValue}>
-                          {new Intl.NumberFormat('tr-TR', {
-                            style: 'currency',
-                            currency: 'TRY',
-                            minimumFractionDigits: 0,
-                          }).format(bid.proposed_price || 0)}
+                      <View style={[styles.priceRow, styles.totalPriceRow, { marginTop: 0, borderTopWidth: 0, paddingTop: 0 }]}>
+                        <Text style={styles.totalLabel}>
+                          {isAwaitingCustomerDecision ? 'Müşteriye Sunulacak Tutar:' : 'Anlaşılan Tutar:'}
                         </Text>
-                      </View>
-                      {commissionRate > 0 && (
-                        <View style={styles.priceRow}>
-                          <Text style={styles.priceLabel}>Greenco Hizmet Bedeli:</Text>
-                          <Text style={styles.priceValue}>
-                            {new Intl.NumberFormat('tr-TR', {
-                              style: 'currency',
-                              currency: 'TRY',
-                              minimumFractionDigits: 0,
-                            }).format((bid.proposed_price || 0) * commissionRate)}
-                          </Text>
-                        </View>
-                      )}
-                      <View style={[styles.priceRow, styles.totalPriceRow]}>
-                        <Text style={styles.totalLabel}>Toplam:</Text>
                         <Text style={styles.totalPrice}>
                           {new Intl.NumberFormat('tr-TR', {
                             style: 'currency',
                             currency: 'TRY',
                             minimumFractionDigits: 0,
-                          }).format(calculateTotalPrice(bid.proposed_price, commissionRate))}
+                          }).format(calculateTotalPrice(bid.bid_amount, commissionRate))}
                         </Text>
                       </View>
                     </View>
@@ -401,6 +494,34 @@ export default function TechnicalRequestDetail() {
                     )}
                   </View>
                 ))}
+              </View>
+            )}
+
+            {isAwaitingCustomerDecision && (
+              <View style={styles.actionsCard}>
+                <TouchableOpacity
+                  style={[styles.actionBtn, styles.primaryBtn]}
+                  onPress={handleApprove}
+                  disabled={updating}
+                >
+                  {updating ? (
+                    <ActivityIndicator color="white" />
+                  ) : (
+                    <>
+                      <CheckCircle size={20} color="white" />
+                      <Text style={styles.primaryBtnText}>Teklifleri Onayla</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.actionBtn, styles.secondaryBtn]}
+                  onPress={handleReject}
+                  disabled={updating}
+                >
+                  <XCircle size={20} color="#ef4444" />
+                  <Text style={[styles.secondaryBtnText, { color: '#ef4444' }]}>Reddet</Text>
+                </TouchableOpacity>
               </View>
             )}
           </>
@@ -629,5 +750,40 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: COLORS.text,
     lineHeight: 20,
+  },
+  actionsCard: {
+    backgroundColor: 'white',
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    gap: 12,
+    marginBottom: 30, // Extra bottom margin for scroll
+  },
+  actionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+    borderRadius: 12,
+    gap: 8,
+  },
+  primaryBtn: {
+    backgroundColor: COLORS.primary,
+  },
+  primaryBtnText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: 'white',
+  },
+  secondaryBtn: {
+    backgroundColor: 'white',
+    borderWidth: 2,
+    borderColor: '#ef4444',
+  },
+  secondaryBtnText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#ef4444',
   },
 });

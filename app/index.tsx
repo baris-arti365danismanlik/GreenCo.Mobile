@@ -33,6 +33,10 @@ export default function Index() {
 
     let targetRoute = '/(tabs)';
 
+    if (profile.role === 'admin') {
+      targetRoute = '/admin';
+    }
+
     if (profile.role === 'technical_company' || technicalCompanyId) {
       targetRoute = '/technical-company';
     } else if (profile.role === 'personnel') {
@@ -57,8 +61,6 @@ export default function Index() {
       } else {
         targetRoute = '/operations';
       }
-    } else if (profile.role === 'admin') {
-      targetRoute = '/admin';
     }
 
     console.log('Navigating to:', targetRoute, 'for role:', profile.role, 'modules:', serviceModules);

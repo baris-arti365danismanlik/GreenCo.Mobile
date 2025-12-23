@@ -12,7 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
-import { ArrowLeft, CheckCircle, XCircle, Clock, User, Calendar, Building } from 'lucide-react-native';
+import { ArrowLeft, CheckCircle, XCircle, Clock, User, Calendar, Building, Plus } from 'lucide-react-native';
 import { COLORS } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -321,6 +321,14 @@ export default function AdminPersonnelRequestsScreen() {
       </View>
 
       <ScrollView style={styles.content}>
+        <TouchableOpacity
+          style={styles.createButton}
+          onPress={() => router.push('/admin/create-project?title=Personel Talebi Oluştur&mode=request')}
+        >
+          <Plus size={24} color="white" />
+          <Text style={styles.createButtonText}>Yeni Talep Oluştur</Text>
+        </TouchableOpacity>
+
         {loading ? (
           <Text style={styles.loadingText}>Yükleniyor...</Text>
         ) : (
@@ -639,6 +647,22 @@ const styles = StyleSheet.create({
     color: COLORS.textLight,
     marginBottom: 12,
     textTransform: 'uppercase',
+  },
+  createButton: {
+    backgroundColor: COLORS.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 20,
+    gap: 10,
+    elevation: 2,
+  },
+  createButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '700',
   },
   loadingText: {
     textAlign: 'center',

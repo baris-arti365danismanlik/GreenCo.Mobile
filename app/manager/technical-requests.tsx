@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useCallback } from 'react';
+import { useFocusEffect } from 'expo-router';
 import {
   View,
   Text,
@@ -24,6 +25,9 @@ type Request = {
   projects_greenco?: {
     name: string;
   } | null;
+  companies?: {
+    name: string;
+  } | null;
 };
 
 export default function TechnicalRequests() {
@@ -31,12 +35,15 @@ export default function TechnicalRequests() {
   const [loading, setLoading] = useState(true);
   const [requests, setRequests] = useState<Request[]>([]);
 
-  useEffect(() => {
-    loadRequests();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      loadRequests();
+    }, [])
+  );
 
   const loadRequests = async () => {
     try {
+      setLoading(true);
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated');
 
@@ -53,20 +60,28 @@ export default function TechnicalRequests() {
 
       const projectIds = managedProjects.map(pm => pm.project_id);
 
+      if (projectIds.length === 0) {
+        setRequests([]);
+        return;
+      }
+
       const { data, error } = await supabase
         .from('technical_service_requests')
         .select(`
           *,
           technical_service_types(name),
-          projects_greenco(name)
+          projects_greenco(name),
+          companies(name)
         `)
         .in('project_id', projectIds)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(5);
 
       if (error) throw error;
       setRequests(data || []);
     } catch (error) {
       console.error('Error loading requests:', error);
+      setRequests([]); // Clear data on error to be safe
     } finally {
       setLoading(false);
     }
@@ -131,7 +146,7 @@ export default function TechnicalRequests() {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+        <TouchableOpacity style={styles.backBtn} onPress={() => router.push('/manager')}>
           <ArrowLeft size={24} color={COLORS.secondary} />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
@@ -146,7 +161,7 @@ export default function TechnicalRequests() {
 
           <TouchableOpacity
             style={styles.quickAccessCard}
-            onPress={() => router.push('/manager/create-request')}
+            onPress={() => router.push('/manager/create-technical-request')}
           >
             <View style={[styles.quickAccessIcon, { backgroundColor: COLORS.primary + '20' }]}>
               <FileText size={24} color={COLORS.primary} />
@@ -159,10 +174,7 @@ export default function TechnicalRequests() {
 
           <TouchableOpacity
             style={styles.quickAccessCard}
-            onPress={() => {
-              // Scroll to requests list
-              // Or you can add filtering logic here
-            }}
+            onPress={() => router.push('/manager/all-requests')}
           >
             <View style={[styles.quickAccessIcon, { backgroundColor: '#fef3c7' }]}>
               <FileText size={24} color="#f59e0b" />
@@ -211,6 +223,11 @@ export default function TechnicalRequests() {
                     {getStatusLabel(request.status)}
                   </Text>
                 </View>
+              </View>
+
+              <View style={styles.requestMeta}>
+                <Text style={styles.metaLabel}>Firma:</Text>
+                <Text style={styles.metaValue}>{request.companies?.name || '-'}</Text>
               </View>
 
               <View style={styles.requestMeta}>

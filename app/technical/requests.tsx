@@ -85,7 +85,25 @@ export default function TechnicalRequests() {
   const [filter, setFilter] = useState<string>('all');
 
   useEffect(() => {
-    loadRequests();
+    // Safety check: specific role redirection
+    const checkRole = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', user.id)
+          .single();
+
+        if (profile?.role === 'project_manager') {
+          router.replace('/manager/technical-requests');
+          return;
+        }
+      }
+      loadRequests();
+    };
+
+    checkRole();
   }, []);
 
   const loadRequests = async () => {

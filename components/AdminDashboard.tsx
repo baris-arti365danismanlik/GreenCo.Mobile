@@ -55,8 +55,8 @@ export default function AdminDashboard() {
       // Total headcount (active personnel)
       const { count: headcount } = await supabase
         .from('project_assignments')
-        .select('*', { count: 'exact', head: true })
-        .eq('is_active', true);
+        .select('*, projects_greenco!inner(*)', { count: 'exact', head: true })
+        .eq('projects_greenco.is_active', true);
 
       // Total revenue (approved invoices)
       const { data: approvedInvoices } = await supabase
@@ -99,7 +99,7 @@ export default function AdminDashboard() {
 
       // Customer satisfaction (average from timesheets feedback)
       const { data: timesheets } = await supabase
-        .from('timesheets')
+        .from('timesheet_periods')
         .select('client_satisfaction_rating')
         .not('client_satisfaction_rating', 'is', null);
 
@@ -117,8 +117,8 @@ export default function AdminDashboard() {
       // Top project by personnel count
       const { data: projectStats } = await supabase
         .from('project_assignments')
-        .select('project_id, projects_greenco(name)')
-        .eq('is_active', true);
+        .select('project_id, projects_greenco!inner(name, is_active)')
+        .eq('projects_greenco.is_active', true);
 
       const projectCounts = new Map<string, { name: string; count: number }>();
       projectStats?.forEach(assignment => {

@@ -281,7 +281,7 @@ export default function ManagerProjects() {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.push('/(tabs)')}>
+        <TouchableOpacity onPress={() => router.push('/manager')}>
           <ArrowLeft size={24} color={COLORS.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Projelerim</Text>

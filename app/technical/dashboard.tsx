@@ -52,7 +52,23 @@ export default function TechnicalDashboard() {
   const [problematicItems, setProblematicItems] = useState<ProblematicItem[]>([]);
 
   useEffect(() => {
-    loadStats();
+    const checkRole = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', user.id)
+          .single();
+
+        if (profile?.role === 'project_manager') {
+          router.replace('/manager/technical-requests');
+          return;
+        }
+      }
+      loadStats();
+    };
+    checkRole();
   }, []);
 
   const loadStats = async () => {

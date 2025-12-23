@@ -11,8 +11,8 @@ import {
   KeyboardAvoidingView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
-import { ArrowLeft, Plus, Trash2, Send } from 'lucide-react-native';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import { ArrowLeft, Plus, Trash2, Send, CheckCircle } from 'lucide-react-native';
 import { COLORS } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -54,10 +54,15 @@ const CRIMINAL_RECORD_OPTIONS = ['yok', 'var'];
 export default function AdminCreateProjectScreen() {
   const router = useRouter();
   const { profile } = useAuth();
+  const { title, mode } = useLocalSearchParams();
   const [loading, setLoading] = useState(false);
 
   const [step, setStep] = useState<'company' | 'project-type' | 'form'>('company');
   const [isNewProject, setIsNewProject] = useState(false);
+
+  // ... (existing code)
+
+
 
   const [companies, setCompanies] = useState<Company[]>([]);
   const [filteredCompanies, setFilteredCompanies] = useState<Company[]>([]);
@@ -224,7 +229,13 @@ export default function AdminCreateProjectScreen() {
   const handleCompanySelect = (companyId: string) => {
     setSelectedCompany(companyId);
     loadData(companyId);
-    setStep('project-type');
+
+    if (mode === 'request') {
+      // Talep oluşturma modunda direkt form sayfasına geç ve mevcut projeleri göster
+      handleProjectTypeSelect(false);
+    } else {
+      setStep('project-type');
+    }
   };
 
   const handleProjectTypeSelect = (isNew: boolean) => {
@@ -530,6 +541,7 @@ export default function AdminCreateProjectScreen() {
       }
 
       if (finalManagerId && finalProjectId) {
+        // 1. Proje Yöneticisi olarak ata (Yetki için)
         const { data: existingPM } = await supabase
           .from('project_managers')
           .select('id')
@@ -547,9 +559,33 @@ export default function AdminCreateProjectScreen() {
 
           if (pmError) throw new Error('Proje yöneticisi atanamadı: ' + pmError.message);
         }
+
+        // 2. Proje Personeli olarak da ata (Listelerde görünmesi için)
+        const { data: existingAssignment } = await supabase
+          .from('project_assignments')
+          .select('id')
+          .eq('project_id', finalProjectId)
+          .eq('personnel_id', finalManagerId)
+          .is('removed_at', null)
+          .maybeSingle();
+
+        if (!existingAssignment) {
+          const { error: assignError } = await supabase
+            .from('project_assignments')
+            .insert({
+              project_id: finalProjectId,
+              personnel_id: finalManagerId,
+              assigned_at: new Date().toISOString(),
+            });
+
+          if (assignError) {
+            console.error('Yönetici personel listesine eklenemedi:', assignError);
+            // Kritik hata fırlatmıyoruz, akış devam etsin
+          }
+        }
       }
 
-      const { error } = await supabase.from('personnel_requests').insert({
+      const { data, error } = await supabase.from('personnel_requests').insert({
         project_id: finalProjectId,
         project_name: projectName,
         project_start_date: projectStartDate,
@@ -563,15 +599,17 @@ export default function AdminCreateProjectScreen() {
         personnel_positions: personnelPositionsData,
         requested_by: profile?.id,
         notes: notes || null,
-        status: 'approved',
-      });
+        status: 'awaiting_assignment',
+      })
+        .select()
+        .single();
 
       if (error) throw error;
 
       if (Platform.OS === 'web') {
-        window.alert('Başarılı! Proje oluşturuldu ve personel talebi onaylandı.');
+        window.alert('Başarılı! Personel talebi oluşturuldu, şimdi atama yapabilirsiniz.');
       }
-      router.push('/admin');
+      router.push(`/admin/assign-personnel?requestId=${data.id}`);
     } catch (error: any) {
       console.error('Proje oluşturma hatası:', error);
       if (Platform.OS === 'web') {
@@ -703,7 +741,7 @@ export default function AdminCreateProjectScreen() {
           <TouchableOpacity onPress={() => setStep('project-type')}>
             <ArrowLeft size={24} color={COLORS.secondary} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Yeni Proje Oluştur</Text>
+          <Text style={styles.headerTitle}>{title || 'Yeni Proje Oluştur'}</Text>
           <View style={{ width: 24 }} />
         </View>
 
@@ -1247,9 +1285,9 @@ export default function AdminCreateProjectScreen() {
               onPress={handleSubmit}
               disabled={loading}
             >
-              <Send size={20} color="white" />
+              <CheckCircle size={20} color="white" />
               <Text style={styles.submitButtonText}>
-                {loading ? 'Oluşturuluyor...' : 'Projeyi Oluştur'}
+                {loading ? 'İşleniyor...' : (mode === 'request' ? 'Talep Oluştur' : 'Projeyi Oluştur')}
               </Text>
             </TouchableOpacity>
           </ScrollView>

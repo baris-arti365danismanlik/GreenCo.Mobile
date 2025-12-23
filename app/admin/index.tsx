@@ -211,6 +211,7 @@ export default function AdminScreen() {
         <TouchableOpacity onPress={handleSignOut}>
           <LogOut size={24} color={COLORS.text} />
         </TouchableOpacity>
+
       </View>
 
       <ScrollView style={styles.content}>

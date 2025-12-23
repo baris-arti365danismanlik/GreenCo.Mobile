@@ -147,7 +147,7 @@ export default function CreateTechnicalServiceInvoiceScreen() {
     return { totalAmount, totalJobs };
   };
 
-  const createInvoice = async (status: 'draft' | 'pending') => {
+  const createInvoice = async (status: 'draft' | 'pending' | 'approved') => {
     if (selectedJobIds.size === 0) {
       if (Platform.OS === 'web') {
         window.alert('Lütfen en az bir iş seçin');
@@ -202,12 +202,12 @@ export default function CreateTechnicalServiceInvoiceScreen() {
       if (updateError) throw updateError;
 
       if (Platform.OS === 'web') {
-        window.alert(`Hakediş ${status === 'draft' ? 'taslak olarak kaydedildi' : 'onaya gönderildi'}`);
+        window.alert(`Hakediş ${status === 'draft' ? 'taslak olarak kaydedildi' : 'oluşturuldu'}`);
         router.back();
       } else {
         Alert.alert(
           'Başarılı',
-          `Hakediş ${status === 'draft' ? 'taslak olarak kaydedildi' : 'onaya gönderildi'}`,
+          `Hakediş ${status === 'draft' ? 'taslak olarak kaydedildi' : 'oluşturuldu'}`,
           [
             {
               text: 'Tamam',
@@ -268,7 +268,7 @@ export default function CreateTechnicalServiceInvoiceScreen() {
               >
                 <Building2
                   size={20}
-                  color={selectedCompanyId === company.id ? COLORS.primary : COLORS.textSecondary}
+                  color={selectedCompanyId === company.id ? COLORS.primary : COLORS.textLight}
                 />
                 <Text
                   style={[
@@ -289,11 +289,11 @@ export default function CreateTechnicalServiceInvoiceScreen() {
             <View style={styles.dateInputContainer}>
               <Text style={styles.dateInputLabel}>Başlangıç</Text>
               <View style={styles.dateInputWrapper}>
-                <Calendar size={16} color={COLORS.textSecondary} />
+                <Calendar size={16} color={COLORS.textLight} />
                 <TextInput
                   style={styles.dateInput}
                   placeholder="YYYY-MM-DD"
-                  placeholderTextColor={COLORS.textSecondary}
+                  placeholderTextColor={COLORS.textLight}
                   value={startDate}
                   onChangeText={setStartDate}
                   maxLength={10}
@@ -303,11 +303,11 @@ export default function CreateTechnicalServiceInvoiceScreen() {
             <View style={styles.dateInputContainer}>
               <Text style={styles.dateInputLabel}>Bitiş</Text>
               <View style={styles.dateInputWrapper}>
-                <Calendar size={16} color={COLORS.textSecondary} />
+                <Calendar size={16} color={COLORS.textLight} />
                 <TextInput
                   style={styles.dateInput}
                   placeholder="YYYY-MM-DD"
-                  placeholderTextColor={COLORS.textSecondary}
+                  placeholderTextColor={COLORS.textLight}
                   value={endDate}
                   onChangeText={setEndDate}
                   maxLength={10}
@@ -361,7 +361,7 @@ export default function CreateTechnicalServiceInvoiceScreen() {
                       {isSelected ? (
                         <CheckCircle size={20} color={COLORS.primary} />
                       ) : (
-                        <Square size={20} color={COLORS.textSecondary} />
+                        <Square size={20} color={COLORS.textLight} />
                       )}
                       <View style={styles.jobInfo}>
                         <Text style={styles.jobTitle}>
@@ -422,15 +422,15 @@ export default function CreateTechnicalServiceInvoiceScreen() {
 
               <TouchableOpacity
                 style={[styles.actionButton, styles.submitButton]}
-                onPress={() => createInvoice('pending')}
+                onPress={() => createInvoice('approved')}
                 disabled={saving || selectedJobIds.size === 0}
               >
                 {saving ? (
                   <ActivityIndicator color="#FFF" />
                 ) : (
                   <>
-                    <Send size={20} color="#FFF" />
-                    <Text style={styles.submitButtonText}>Onaya Gönder</Text>
+                    <CheckCircle size={20} color="#FFF" />
+                    <Text style={styles.submitButtonText}>Hakediş Oluştur</Text>
                   </>
                 )}
               </TouchableOpacity>
@@ -440,7 +440,7 @@ export default function CreateTechnicalServiceInvoiceScreen() {
 
         {jobs.length === 0 && selectedCompanyId && startDate && endDate && !loading && (
           <View style={styles.emptyState}>
-            <FileText size={48} color={COLORS.textSecondary} />
+            <FileText size={48} color={COLORS.textLight} />
             <Text style={styles.emptyText}>
               Seçilen kriterlere uygun tamamlanmış iş bulunamadı
             </Text>
@@ -454,7 +454,7 @@ export default function CreateTechnicalServiceInvoiceScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor: COLORS.bg,
   },
   header: {
     flexDirection: 'row',
@@ -522,7 +522,7 @@ const styles = StyleSheet.create({
   dateInputLabel: {
     fontSize: 12,
     fontWeight: '600',
-    color: COLORS.textSecondary,
+    color: COLORS.textLight,
     marginBottom: 8,
   },
   dateInputWrapper: {
@@ -608,12 +608,12 @@ const styles = StyleSheet.create({
   },
   jobLocation: {
     fontSize: 12,
-    color: COLORS.textSecondary,
+    color: COLORS.textLight,
     marginBottom: 2,
   },
   jobDate: {
     fontSize: 11,
-    color: COLORS.textSecondary,
+    color: COLORS.textLight,
   },
   jobAmount: {
     fontSize: 15,
@@ -692,7 +692,7 @@ const styles = StyleSheet.create({
   emptyText: {
     marginTop: 16,
     fontSize: 14,
-    color: COLORS.textSecondary,
+    color: COLORS.textLight,
     textAlign: 'center',
   },
 });

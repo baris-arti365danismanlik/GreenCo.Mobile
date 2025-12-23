@@ -25,6 +25,7 @@ type Request = {
   created_at: string;
   companies?: {
     name: string;
+    commission_rate: number;
   } | null;
   technical_service_types?: {
     name: string;
@@ -39,10 +40,14 @@ export default function AdminTechnicalRequestDetail() {
   const { id } = useLocalSearchParams();
   const [loading, setLoading] = useState(true);
   const [request, setRequest] = useState<Request | null>(null);
+  const [bids, setBids] = useState<any[]>([]);
   const [updating, setUpdating] = useState(false);
   const [bidStats, setBidStats] = useState<{
     count: number;
-    minAmount?: number;
+    bestBid?: {
+      raw: number;
+      final: number;
+    };
     quoteCount: number;
     infoRequestCount: number;
     diagnosticCount: number;
@@ -60,7 +65,7 @@ export default function AdminTechnicalRequestDetail() {
         .from('technical_service_requests')
         .select(`
           *,
-          companies(name),
+          companies(name, commission_rate),
           technical_service_types(name),
           projects_greenco(name)
         `)
@@ -70,24 +75,51 @@ export default function AdminTechnicalRequestDetail() {
       if (error) throw error;
       setRequest(data);
 
-      if (data?.status === 'bidding') {
-        const { data: bids } = await supabase
+      if (data && data.status !== 'pending_review' && data.status !== 'info_needed') {
+        const { data: bidsData } = await supabase
           .from('technical_service_bids')
-          .select('bid_amount, bid_type')
+          .select('*, technical_service_companies(company_name)')
           .eq('request_id', id);
 
-        if (bids && bids.length > 0) {
-          const priceQuotes = bids.filter(b => b.bid_type === 'quote');
-          const infoRequests = bids.filter(b => b.bid_type === 'info_request');
-          const diagnosticServices = bids.filter(b => b.bid_type === 'diagnostic_service');
+        if (bidsData) {
+          setBids(bidsData);
+        }
 
-          const minAmount = priceQuotes.length > 0 && priceQuotes.some(b => b.bid_amount)
-            ? Math.min(...priceQuotes.filter(b => b.bid_amount).map(b => b.bid_amount!))
-            : undefined;
+        if (bidsData && bidsData.length > 0) {
+          const priceQuotes = bidsData.filter(b => b.bid_type === 'quote');
+          const infoRequests = bidsData.filter(b => b.bid_type === 'info_request');
+          const diagnosticServices = bidsData.filter(b => b.bid_type === 'diagnostic_service');
+
+          // En düşük fiyatı hesapla (Komisyon dahil en uygun teklifi bul)
+          let bestBid: { raw: number; final: number } | undefined;
+
+          if (priceQuotes.length > 0) {
+            // @ts-ignore
+            const commissionRate = data?.companies?.commission_rate || 0;
+
+            const calculatedBids = priceQuotes
+              .filter(b => b.bid_amount)
+              .map(b => {
+                const rawAmount = b.bid_amount!;
+                // Veritabanında ondalık olarak saklanıyor (0.10)
+                const finalAmount = rawAmount * (1 + commissionRate);
+
+                return {
+                  raw: rawAmount,
+                  final: finalAmount
+                };
+              });
+
+            if (calculatedBids.length > 0) {
+              // Final fiyata göre sırala ve en düşüğü al
+              calculatedBids.sort((a, b) => a.final - b.final);
+              bestBid = calculatedBids[0];
+            }
+          }
 
           setBidStats({
-            count: bids.length,
-            minAmount,
+            count: bidsData.length,
+            bestBid,
             quoteCount: priceQuotes.length,
             infoRequestCount: infoRequests.length,
             diagnosticCount: diagnosticServices.length,
@@ -107,12 +139,12 @@ export default function AdminTechnicalRequestDetail() {
     const labels: Record<string, string> = {
       pending_review: 'İnceleme Bekliyor',
       info_needed: 'Bilgi Bekleniyor',
-      bidding: 'Teklif Toplama',
-      awaiting_customer_decision: 'Karar Bekleniyor',
+      bidding: 'Teklif Toplanıyor',
+      awaiting_customer_decision: 'Fiyat Teklifi Verildi',
       approved: 'Onaylandı',
       in_progress: 'Devam Ediyor',
       completed: 'Tamamlandı',
-      cancelled: 'İptal Edildi',
+      cancelled: 'Reddedildi',
     };
     return labels[status] || status;
   };
@@ -272,22 +304,90 @@ export default function AdminTechnicalRequestDetail() {
                   )}
                 </View>
 
-                {bidStats.minAmount && (
+                {bidStats.bestBid && (
                   <View style={styles.minBidSection}>
-                    <View style={styles.minBidHeader}>
-                      <DollarSign size={18} color={COLORS.success} />
-                      <Text style={styles.minBidLabel}>En Düşük Fiyat Teklifi</Text>
+                    <View style={styles.minBidRow}>
+                      <View>
+                        <View style={styles.minBidHeader}>
+                          <DollarSign size={16} color={COLORS.textLight} />
+                          <Text style={styles.minBidLabel}>Teklif Edilen (Net)</Text>
+                        </View>
+                        <Text style={styles.subBidAmount}>
+                          {new Intl.NumberFormat('tr-TR', {
+                            style: 'currency',
+                            currency: 'TRY',
+                            minimumFractionDigits: 0,
+                          }).format(bidStats.bestBid.raw)}
+                        </Text>
+                      </View>
                     </View>
-                    <Text style={styles.minBidAmount}>
-                      {new Intl.NumberFormat('tr-TR', {
-                        style: 'currency',
-                        currency: 'TRY',
-                        minimumFractionDigits: 0,
-                      }).format(bidStats.minAmount)}
-                    </Text>
+
+                    <View style={styles.divider} />
+
+                    <View style={styles.minBidRow}>
+                      <View>
+                        <View style={styles.minBidHeader}>
+                          <DollarSign size={18} color={COLORS.success} />
+                          <Text style={[styles.minBidLabel, { color: COLORS.success, fontWeight: '700' }]}>
+                            Müşteriye Sunulacak
+                          </Text>
+                        </View>
+                        <Text style={styles.minBidAmount}>
+                          {new Intl.NumberFormat('tr-TR', {
+                            style: 'currency',
+                            currency: 'TRY',
+                            minimumFractionDigits: 0,
+                          }).format(bidStats.bestBid.final)}
+                        </Text>
+                      </View>
+                    </View>
                   </View>
                 )}
               </View>
+            </View>
+          )}
+
+          {/* New Section: Display Selected Bids (What the customer sees) */}
+          {request.status !== 'bidding' && bids.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Müşteriye İletilen Teklifler</Text>
+              {bids.filter((b: any) => b.selected_for_customer || b.status === 'accepted').map((bid: any) => (
+                <View key={bid.id} style={styles.card}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <Text style={{ fontWeight: '700', color: COLORS.secondary }}>
+                      {bid.technical_service_companies?.company_name}
+                    </Text>
+                    {bid.status === 'accepted' && (
+                      <View style={{ backgroundColor: '#dcfce7', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4 }}>
+                        <Text style={{ color: '#166534', fontSize: 12 }}>Kabul Edildi</Text>
+                      </View>
+                    )}
+                  </View>
+                  <View style={{ flexDirection: 'row', gap: 16, marginTop: 4 }}>
+                    <View>
+                      <Text style={{ color: COLORS.textLight, fontSize: 12, marginBottom: 2 }}>Ham Tutar (Net):</Text>
+                      <Text style={{ fontWeight: '600', color: COLORS.secondary, fontSize: 15 }}>
+                        {new Intl.NumberFormat('tr-TR', {
+                          style: 'currency',
+                          currency: 'TRY',
+                          minimumFractionDigits: 0,
+                        }).format(bid.bid_amount)}
+                      </Text>
+                    </View>
+                    <View style={{ width: 1, backgroundColor: COLORS.border }} />
+                    <View>
+                      <Text style={{ color: COLORS.textLight, fontSize: 12, marginBottom: 2 }}>Müşteri Fiyatı:</Text>
+                      <Text style={{ fontWeight: '700', color: COLORS.primary, fontSize: 16 }}>
+                        {new Intl.NumberFormat('tr-TR', {
+                          style: 'currency',
+                          currency: 'TRY',
+                          minimumFractionDigits: 0,
+                        }).format(bid.bid_amount * (1 + (request.companies?.commission_rate || 0)))}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+              ))}
             </View>
           )}
 
@@ -539,5 +639,20 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: '700',
     color: COLORS.success,
+  },
+  minBidRow: {
+    paddingVertical: 4,
+  },
+  subBidAmount: {
+    fontSize: 16,
+    color: COLORS.secondary,
+    fontWeight: '600',
+    marginLeft: 24,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: '#10b981',
+    opacity: 0.3,
+    marginVertical: 8,
   },
 });

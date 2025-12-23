@@ -43,7 +43,10 @@ export default function RequestDetail() {
   const [isUserProjectManager, setIsUserProjectManager] = useState(false);
   const [bidStats, setBidStats] = useState<{
     count: number;
-    minAmount?: number;
+    bestBid?: {
+      raw: number;
+      final: number;
+    };
     quoteCount: number;
     infoRequestCount: number;
     diagnosticCount: number;
@@ -64,7 +67,7 @@ export default function RequestDetail() {
         .from('technical_service_requests')
         .select(`
           *,
-          companies(name),
+          companies(name, commission_rate),
           technical_service_types(name),
           projects_greenco(name)
         `)
@@ -88,7 +91,7 @@ export default function RequestDetail() {
       if (data?.status === 'bidding') {
         const { data: bids } = await supabase
           .from('technical_service_bids')
-          .select('bid_amount, bid_type')
+          .select('bid_amount, bid_type') // Removed company_id as it's not used for commission calculation here
           .eq('request_id', id);
 
         if (bids && bids.length > 0) {
@@ -96,13 +99,37 @@ export default function RequestDetail() {
           const infoRequests = bids.filter(b => b.bid_type === 'info_request');
           const diagnosticServices = bids.filter(b => b.bid_type === 'diagnostic_service');
 
-          const minAmount = priceQuotes.length > 0 && priceQuotes.some(b => b.bid_amount)
-            ? Math.min(...priceQuotes.filter(b => b.bid_amount).map(b => b.bid_amount!))
-            : undefined;
+          // En düşük fiyatı hesapla (Komisyon dahil en uygun teklifi bul)
+          let bestBid: { raw: number; final: number } | undefined;
+
+          if (priceQuotes.length > 0) {
+            // Use the customer's company commission rate
+            // @ts-ignore - data.companies is already typed, but commission_rate might be null/undefined
+            const commissionRate = data?.companies?.commission_rate || 0;
+
+            const calculatedBids = priceQuotes
+              .filter(b => b.bid_amount)
+              .map(b => {
+                const rawAmount = b.bid_amount!;
+                // Veritabanında ondalık olarak saklanıyor (0.10)
+                const finalAmount = rawAmount * (1 + commissionRate);
+
+                return {
+                  raw: rawAmount,
+                  final: finalAmount
+                };
+              });
+
+            if (calculatedBids.length > 0) {
+              // Final fiyata göre sırala ve en düşüğü al
+              calculatedBids.sort((a, b) => a.final - b.final);
+              bestBid = calculatedBids[0];
+            }
+          }
 
           setBidStats({
             count: bids.length,
-            minAmount,
+            bestBid,
             quoteCount: priceQuotes.length,
             infoRequestCount: infoRequests.length,
             diagnosticCount: diagnosticServices.length,
@@ -123,6 +150,7 @@ export default function RequestDetail() {
       pending_review: 'İnceleme Bekliyor',
       info_needed: 'Bilgi Bekleniyor',
       bidding: 'Teklif Toplama',
+      awaiting_customer_decision: 'Operasyon Onayı Bekleniyor',
       approved: 'Onaylandı',
       in_progress: 'Devam Ediyor',
       completed: 'Tamamlandı',
@@ -179,19 +207,88 @@ export default function RequestDetail() {
     try {
       setUpdating(true);
 
-      const { data, error } = await supabase.rpc('auto_select_bids_for_customer', {
-        p_request_id: id,
-      });
-
-      if (error) throw error;
-
+      // 1. Reset previous selections for this request
       await supabase
+        .from('technical_service_bids')
+        .update({
+          selected_for_customer: false,
+          shown_to_customer_at: null,
+          is_combined_info_request: false,
+          combined_from_bid_ids: null
+        })
+        .eq('request_id', id);
+
+      // 2. Fetch all active bids
+      const { data: bids } = await supabase
+        .from('technical_service_bids')
+        .select('*')
+        .eq('request_id', id)
+        .neq('status', 'rejected')
+        .neq('status', 'withdrawn');
+
+      if (bids && bids.length > 0) {
+        const updates = [];
+
+        // 3a. Select Lowest Price Quote
+        const quoteBids = bids
+          .filter(b => b.bid_type === 'quote' && b.bid_amount != null)
+          .sort((a, b) => (a.bid_amount || 0) - (b.bid_amount || 0) || new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+
+        if (quoteBids.length > 0) {
+          updates.push(
+            supabase
+              .from('technical_service_bids')
+              .update({ selected_for_customer: true, shown_to_customer_at: new Date().toISOString() })
+              .eq('id', quoteBids[0].id)
+          );
+        }
+
+        // 3b. Select Lowest Price Diagnostic
+        const diagnosticBids = bids
+          .filter(b => (b.bid_type === 'diagnostic' || b.bid_type === 'diagnostic_service') && b.bid_amount != null)
+          .sort((a, b) => (a.bid_amount || 0) - (b.bid_amount || 0) || new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+
+        if (diagnosticBids.length > 0) {
+          updates.push(
+            supabase
+              .from('technical_service_bids')
+              .update({ selected_for_customer: true, shown_to_customer_at: new Date().toISOString() })
+              .eq('id', diagnosticBids[0].id)
+          );
+        }
+
+        // 3c. Combine Info Requests
+        const infoRequestBids = bids.filter(b => b.bid_type === 'info_request');
+        if (infoRequestBids.length > 0) {
+          const ids = infoRequestBids.map(b => b.id);
+          const primaryBidId = ids[0];
+
+          updates.push(
+            supabase
+              .from('technical_service_bids')
+              .update({
+                selected_for_customer: true,
+                is_combined_info_request: true,
+                combined_from_bid_ids: ids,
+                shown_to_customer_at: new Date().toISOString()
+              })
+              .eq('id', primaryBidId)
+          );
+        }
+
+        await Promise.all(updates);
+      }
+
+      // 4. Update request status
+      const { error: updateError } = await supabase
         .from('technical_service_requests')
         .update({
           status: 'awaiting_customer_decision',
           updated_at: new Date().toISOString(),
         })
         .eq('id', id);
+
+      if (updateError) throw updateError;
 
       window.alert('Başarılı: Müşteriye en uygun seçenekler hazırlandı');
       loadRequest();
@@ -377,19 +474,43 @@ export default function RequestDetail() {
                   )}
                 </View>
 
-                {bidStats.minAmount && (
+                {bidStats.bestBid && (
                   <View style={styles.minBidSection}>
-                    <View style={styles.minBidHeader}>
-                      <DollarSign size={18} color={COLORS.success} />
-                      <Text style={styles.minBidLabel}>En Düşük Fiyat Teklifi</Text>
+                    <View style={styles.minBidRow}>
+                      <View>
+                        <View style={styles.minBidHeader}>
+                          <DollarSign size={16} color={COLORS.textLight} />
+                          <Text style={styles.minBidLabel}>Teklif Edilen (Net)</Text>
+                        </View>
+                        <Text style={styles.subBidAmount}>
+                          {new Intl.NumberFormat('tr-TR', {
+                            style: 'currency',
+                            currency: 'TRY',
+                            minimumFractionDigits: 0,
+                          }).format(bidStats.bestBid.raw)}
+                        </Text>
+                      </View>
                     </View>
-                    <Text style={styles.minBidAmount}>
-                      {new Intl.NumberFormat('tr-TR', {
-                        style: 'currency',
-                        currency: 'TRY',
-                        minimumFractionDigits: 0,
-                      }).format(bidStats.minAmount)}
-                    </Text>
+
+                    <View style={styles.divider} />
+
+                    <View style={styles.minBidRow}>
+                      <View>
+                        <View style={styles.minBidHeader}>
+                          <DollarSign size={18} color={COLORS.success} />
+                          <Text style={[styles.minBidLabel, { color: COLORS.success, fontWeight: '700' }]}>
+                            Müşteriye Sunulacak
+                          </Text>
+                        </View>
+                        <Text style={styles.minBidAmount}>
+                          {new Intl.NumberFormat('tr-TR', {
+                            style: 'currency',
+                            currency: 'TRY',
+                            minimumFractionDigits: 0,
+                          }).format(bidStats.bestBid.final)}
+                        </Text>
+                      </View>
+                    </View>
                   </View>
                 )}
               </View>
@@ -416,7 +537,7 @@ export default function RequestDetail() {
           </View>
         )}
 
-        {request.status === 'bidding' && !isUserProjectManager && bidStats && bidStats.count > 0 && (
+        {(request.status === 'bidding' || request.status === 'awaiting_customer_decision') && !isUserProjectManager && bidStats && bidStats.count > 0 && (
           <View style={styles.actionsCard}>
             <TouchableOpacity
               style={[styles.actionBtn, styles.primaryBtn, { backgroundColor: COLORS.success }]}
@@ -428,7 +549,9 @@ export default function RequestDetail() {
               ) : (
                 <>
                   <CheckCircle size={20} color="white" />
-                  <Text style={styles.primaryBtnText}>Teklif Sürecini Sonlandır</Text>
+                  <Text style={styles.primaryBtnText}>
+                    {request.status === 'awaiting_customer_decision' ? 'Teklif Seçimini Yenile' : 'Teklif Sürecini Sonlandır'}
+                  </Text>
                 </>
               )}
             </TouchableOpacity>
@@ -743,5 +866,20 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#1e40af',
     lineHeight: 20,
+  },
+  minBidRow: {
+    paddingVertical: 4,
+  },
+  subBidAmount: {
+    fontSize: 16,
+    color: COLORS.secondary,
+    fontWeight: '600',
+    marginLeft: 24,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: '#10b981',
+    opacity: 0.3,
+    marginVertical: 8,
   },
 });

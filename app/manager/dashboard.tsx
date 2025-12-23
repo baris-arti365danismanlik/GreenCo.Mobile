@@ -54,7 +54,7 @@ export default function ManagerDashboard() {
         .from('project_managers')
         .select('project_id')
         .eq('manager_id', profile!.id)
-        .eq('is_active', true);
+        .eq('manager_id', profile!.id);
 
       const projectIds = managedProjects?.map(pm => pm.project_id) || [];
 
