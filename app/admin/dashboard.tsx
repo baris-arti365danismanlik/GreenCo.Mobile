@@ -77,25 +77,44 @@ export default function AdminDashboard() {
     try {
       setLoading(true);
 
-      const { count: headcount } = await supabase
-        .from('profiles')
-        .select('*', { count: 'exact', head: true })
-        .eq('role', 'personnel');
+      let headcountQuery = supabase
+        .from('project_assignments')
+        .select('user_id, projects_greenco!inner(company_id)')
+        .is('removed_at', null);
 
-      const { count: projectCount } = await supabase
+      if (selectedProjectId) {
+        headcountQuery = headcountQuery.eq('project_id', selectedProjectId);
+      } else if (selectedCompanyId) {
+        headcountQuery = headcountQuery.eq('projects_greenco.company_id', selectedCompanyId);
+      }
+
+      const { data: assignments } = await headcountQuery;
+      // Count unique personnel
+      const uniquePersonnel = new Set(assignments?.map((a: any) => a.user_id));
+      const headcount = uniquePersonnel.size;
+
+      let projectQuery = supabase
         .from('projects_greenco')
         .select('*', { count: 'exact', head: true })
         .eq('is_active', true);
 
+      if (selectedProjectId) {
+        projectQuery = projectQuery.eq('id', selectedProjectId);
+      } else if (selectedCompanyId) {
+        projectQuery = projectQuery.eq('company_id', selectedCompanyId);
+      }
+
+      const { count: projectCount } = await projectQuery;
+
       let invoicesQuery = supabase
         .from('invoices')
-        .select('total_amount, created_at, status, timesheets!inner(project_id, projects_greenco!inner(id, name, company_id))')
+        .select('total_amount, created_at, status, projects_greenco!inner(id, name, company_id)')
         .eq('status', 'approved');
 
       if (selectedProjectId) {
-        invoicesQuery = invoicesQuery.eq('timesheets.project_id', selectedProjectId);
+        invoicesQuery = invoicesQuery.eq('project_id', selectedProjectId);
       } else if (selectedCompanyId) {
-        invoicesQuery = invoicesQuery.eq('timesheets.projects_greenco.company_id', selectedCompanyId);
+        invoicesQuery = invoicesQuery.eq('projects_greenco.company_id', selectedCompanyId);
       }
 
       const { data: invoices } = await invoicesQuery;
@@ -120,22 +139,38 @@ export default function AdminDashboard() {
         ? ((monthlyRevenue - lastMonthRevenue) / lastMonthRevenue) * 100
         : 0;
 
-      const { data: attendanceRecords } = await supabase
+      let attendanceQuery = supabase
         .from('attendance_records')
-        .select('performance_rating');
+        .select('performance_rating, projects_greenco!inner(id, company_id)');
+
+      if (selectedProjectId) {
+        attendanceQuery = attendanceQuery.eq('project_id', selectedProjectId);
+      } else if (selectedCompanyId) {
+        attendanceQuery = attendanceQuery.eq('projects_greenco.company_id', selectedCompanyId);
+      }
+
+      const { data: attendanceRecords } = await attendanceQuery;
 
       const performanceRatings = attendanceRecords
-        ?.filter(r => r.performance_rating)
-        .map(r => r.performance_rating) || [];
+        ?.filter((r: any) => r.performance_rating)
+        .map((r: any) => r.performance_rating) || [];
 
       const avgPerformance = performanceRatings.length > 0
-        ? performanceRatings.reduce((sum, rating) => sum + rating, 0) / performanceRatings.length
+        ? performanceRatings.reduce((sum: number, rating: number) => sum + rating, 0) / performanceRatings.length
         : 0;
 
-      const { data: projectPersonnelCounts } = await supabase
+      let assignmentsQuery = supabase
         .from('project_assignments')
-        .select('project_id, projects_greenco(name)')
-        .eq('is_active', true);
+        .select('project_id, projects_greenco!inner(name, company_id)')
+        .is('removed_at', null);
+
+      if (selectedProjectId) {
+        assignmentsQuery = assignmentsQuery.eq('project_id', selectedProjectId);
+      } else if (selectedCompanyId) {
+        assignmentsQuery = assignmentsQuery.eq('projects_greenco.company_id', selectedCompanyId);
+      }
+
+      const { data: projectPersonnelCounts } = await assignmentsQuery;
 
       const projectCounts = projectPersonnelCounts?.reduce((acc: any, assignment: any) => {
         const projectName = assignment.projects_greenco?.name;
@@ -157,13 +192,21 @@ export default function AdminDashboard() {
         };
       }
 
-      const { data: projectInvoices } = await supabase
+      let projectInvoicesQuery = supabase
         .from('invoices')
-        .select('total_amount, timesheets!inner(project_id, projects_greenco!inner(name))')
+        .select('total_amount, projects_greenco!inner(name, id, company_id)')
         .eq('status', 'approved');
 
+      if (selectedProjectId) {
+        projectInvoicesQuery = projectInvoicesQuery.eq('project_id', selectedProjectId);
+      } else if (selectedCompanyId) {
+        projectInvoicesQuery = projectInvoicesQuery.eq('projects_greenco.company_id', selectedCompanyId);
+      }
+
+      const { data: projectInvoices } = await projectInvoicesQuery;
+
       const projectRevenues = projectInvoices?.reduce((acc: any, inv: any) => {
-        const projectName = inv.timesheets?.projects_greenco?.name;
+        const projectName = inv.projects_greenco?.name;
         if (projectName) {
           acc[projectName] = (acc[projectName] || 0) + (inv.total_amount || 0);
         }

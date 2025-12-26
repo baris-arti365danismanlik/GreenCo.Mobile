@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { ArrowLeft, Plus, Trash2, Send, CheckCircle } from 'lucide-react-native';
+import { ArrowLeft, Plus, Trash2, Send, CheckCircle, Building2, Pencil } from 'lucide-react-native';
 import { COLORS } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -494,8 +494,16 @@ export default function AdminCreateProjectScreen() {
       let finalManagerId = selectedManager;
 
       if (isNewManager) {
-        const { data: session } = await supabase.auth.getSession();
         if (!session?.session) throw new Error('Oturum bulunamadı');
+
+        // Telefon numarasını formatla (+90...)
+        let formattedPhone = managerPhone.replace(/\s+/g, ''); // Boşlukları temizle
+        if (formattedPhone.startsWith('0')) {
+          formattedPhone = formattedPhone.substring(1);
+        }
+        if (!formattedPhone.startsWith('+90')) {
+          formattedPhone = '+90' + formattedPhone;
+        }
 
         const apiUrl = 'https://mtfqfzilbyyxwjfuhkdf.supabase.co/functions/v1/create-user';
         const response = await fetch(apiUrl, {
@@ -505,7 +513,7 @@ export default function AdminCreateProjectScreen() {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            phone: managerPhone,
+            phone: formattedPhone,
             password: managerPassword,
             full_name: managerFullName,
             role: 'project_manager',
@@ -582,6 +590,16 @@ export default function AdminCreateProjectScreen() {
             console.error('Yönetici personel listesine eklenemedi:', assignError);
             // Kritik hata fırlatmıyoruz, akış devam etsin
           }
+        }
+
+        // 3. Proje Yöneticisinin Company ID'sini güncelle
+        const { error: profileUpdateError } = await supabase
+          .from('profiles')
+          .update({ company_id: selectedCompany })
+          .eq('id', finalManagerId);
+
+        if (profileUpdateError) {
+          console.error('Yönetici firma bilgisi güncellenemedi:', profileUpdateError);
         }
       }
 
@@ -757,6 +775,27 @@ export default function AdminCreateProjectScreen() {
             showsVerticalScrollIndicator={false}
           >
             <View style={styles.section}>
+              <View style={styles.companyInfoCard}>
+                <View style={styles.companyInfoLeft}>
+                  <View style={styles.companyIconBox}>
+                    <Building2 size={24} color={COLORS.primary} />
+                  </View>
+                  <View>
+                    <Text style={styles.companyInfoLabel}>Seçili Firma</Text>
+                    <Text style={styles.companyInfoName}>
+                      {companies.find(c => c.id === selectedCompany)?.name}
+                    </Text>
+                  </View>
+                </View>
+                <TouchableOpacity
+                  style={styles.changeCompanyBtn}
+                  onPress={() => setStep('company')}
+                >
+                  <Pencil size={14} color={COLORS.primary} style={{ marginRight: 4 }} />
+                  <Text style={styles.changeCompanyText}>Değiştir</Text>
+                </TouchableOpacity>
+              </View>
+
               <Text style={styles.sectionTitle}>PROJE BİLGİLERİ</Text>
 
               {!isNewProject ? (
@@ -1472,6 +1511,61 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: COLORS.primary,
     fontWeight: '600',
+  },
+  companyInfoCard: {
+    backgroundColor: '#fff',
+    padding: 16,
+    borderRadius: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.05,
+    shadowRadius: 3.84,
+    elevation: 2,
+  },
+  companyInfoLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  companyIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: '#ecfdf5',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  companyInfoLabel: {
+    fontSize: 12,
+    color: COLORS.textLight,
+    marginBottom: 2,
+  },
+  companyInfoName: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORS.secondary,
+  },
+  changeCompanyBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f3f4f6',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  changeCompanyText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.secondary,
   },
   removeButton: {
     paddingHorizontal: 10,

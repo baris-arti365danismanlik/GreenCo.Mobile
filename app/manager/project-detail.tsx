@@ -10,6 +10,7 @@ import {
   Image,
   Alert,
   Platform,
+  TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
@@ -17,6 +18,7 @@ import { ArrowLeft, User, MapPin, Clock, Power, QrCode, RefreshCw, Eye, X, FileT
 import { COLORS } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 import QRCode from 'react-native-qrcode-svg';
+import * as Location from 'expo-location';
 
 type Personnel = {
   id: string;
@@ -49,6 +51,10 @@ export default function ProjectDetail() {
   const [personnelRequests, setPersonnelRequests] = useState<PersonnelRequest[]>([]);
   const [cancelModalVisible, setCancelModalVisible] = useState(false);
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
+  const [locationModalVisible, setLocationModalVisible] = useState(false);
+  const [newLocation, setNewLocation] = useState<{ lat: number, lon: number, address: string } | null>(null);
+  const [editLat, setEditLat] = useState('');
+  const [editLon, setEditLon] = useState('');
 
   useEffect(() => {
     if (id) {
@@ -229,6 +235,88 @@ export default function ProjectDetail() {
     }
   };
 
+  const handleUpdateLocation = async () => {
+    if (!project) return;
+
+    setLoading(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        alert('Konum izni verilmedi. Lütfen tarayıcı ayarlarından (adres çubuğundaki kilit/konum ikonu) konum iznini aktif edip sayfayı yenileyin.');
+        setLoading(false);
+        return;
+      }
+
+      const location = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.High
+      });
+
+      let addressText = 'Adres alınamadı';
+      try {
+        const reverseGeocode = await Location.reverseGeocodeAsync({
+          latitude: location.coords.latitude,
+          longitude: location.coords.longitude
+        });
+        if (reverseGeocode.length > 0) {
+          const addr = reverseGeocode[0];
+          const parts = [addr.street, addr.district, addr.city, addr.region].filter(Boolean);
+          addressText = parts.join(', ');
+        }
+      } catch (e) {
+        console.log('Reverse geocode error', e);
+      }
+
+      setNewLocation({
+        lat: location.coords.latitude,
+        lon: location.coords.longitude,
+        address: addressText
+      });
+      setEditLat(location.coords.latitude.toString());
+      setEditLon(location.coords.longitude.toString());
+      setLocationModalVisible(true);
+    } catch (error: any) {
+      console.error('Konum alma hatası:', error);
+      alert('Konum alınamadı: ' + error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const confirmUpdateLocation = async () => {
+    if (!project) return;
+
+    // Parse values
+    const lat = parseFloat(editLat);
+    const lon = parseFloat(editLon);
+
+    if (isNaN(lat) || isNaN(lon)) {
+      alert('Lütfen geçerli bir enlem ve boylam değeri giriniz.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { error } = await supabase
+        .from('projects_greenco')
+        .update({
+          latitude: lat,
+          longitude: lon,
+        })
+        .eq('id', project.id);
+
+      if (error) throw error;
+
+      alert('Başarılı! Proje konumu güncellendi.');
+      setLocationModalVisible(false);
+      loadProject();
+    } catch (error: any) {
+      console.error('Konum güncelleme hatası:', error);
+      alert('Hata: ' + error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleGenerateQR = async () => {
     if (!project) return;
 
@@ -347,6 +435,15 @@ export default function ProjectDetail() {
                 <Text style={styles.qrButtonSecondaryText}>Görüntüle</Text>
               </TouchableOpacity>
             )}
+            {project.qr_code_secret && (
+              <TouchableOpacity
+                style={styles.qrButtonSecondary}
+                onPress={handleUpdateLocation}
+              >
+                <MapPin size={18} color={COLORS.primary} />
+                <Text style={styles.qrButtonSecondaryText}>Konum</Text>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity
               style={[styles.qrButton, !project.qr_code_secret && { flex: 1 }]}
               onPress={handleGenerateQR}
@@ -397,8 +494,8 @@ export default function ProjectDetail() {
 
               const statusColor = statusColors[request.status as keyof typeof statusColors] || statusColors.pending;
 
-              // Show edit/cancel buttons for pending and awaiting_assignment (but not cancelled)
-              const canEdit = (request.status === 'pending' || request.status === 'awaiting_assignment') && request.status !== 'cancelled';
+              // Show edit/cancel buttons for pending and awaiting_assignment
+              const canEdit = request.status === 'pending' || request.status === 'awaiting_assignment';
 
               return (
                 <View key={request.id} style={styles.requestCard}>
@@ -536,6 +633,76 @@ export default function ProjectDetail() {
             )}
           </View>
         </Pressable>
+      </Modal>
+
+      <Modal visible={locationModalVisible} transparent animationType="fade">
+        <View style={styles.cancelModalOverlay}>
+          <View style={styles.cancelModalContent}>
+            <View style={styles.cancelModalHeader}>
+              <Text style={styles.cancelModalTitle}>Konum Güncelleme</Text>
+            </View>
+            <View style={{ marginBottom: 20 }}>
+
+              <Text style={{ fontSize: 13, color: COLORS.textLight, marginBottom: 16, lineHeight: 18 }}>
+                Aşağıdaki koordinatları manuel olarak düzenleyebilirsiniz (Google Maps vb. kaynaklardan alınan değerler).
+              </Text>
+
+              <View style={{ marginBottom: 12 }}>
+                <Text style={{ fontSize: 12, fontWeight: '600', color: COLORS.secondary, marginBottom: 6 }}>Enlem (Latitude):</Text>
+                <TextInput
+                  style={{ borderWidth: 1, borderColor: COLORS.border, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 15, color: COLORS.text }}
+                  value={editLat}
+                  onChangeText={setEditLat}
+                  keyboardType="numeric"
+                  placeholder="Örn: 41.0082"
+                />
+              </View>
+
+              <View style={{ marginBottom: 16 }}>
+                <Text style={{ fontSize: 12, fontWeight: '600', color: COLORS.secondary, marginBottom: 6 }}>Boylam (Longitude):</Text>
+                <TextInput
+                  style={{ borderWidth: 1, borderColor: COLORS.border, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 15, color: COLORS.text }}
+                  value={editLon}
+                  onChangeText={setEditLon}
+                  keyboardType="numeric"
+                  placeholder="Örn: 28.9784"
+                />
+              </View>
+
+              {newLocation?.address && newLocation.address !== 'Adres alınamadı' && (
+                <View style={{ flexDirection: 'row', alignItems: 'flex-start', backgroundColor: '#f9fafb', padding: 10, borderRadius: 8 }}>
+                  <MapPin size={16} color={COLORS.textLight} style={{ marginTop: 2, marginRight: 8 }} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontWeight: '600', color: COLORS.secondary, fontSize: 12 }}>Algılanan Adres:</Text>
+                    <Text style={{ color: COLORS.textLight, marginTop: 2, fontSize: 12 }}>
+                      {newLocation.address}
+                    </Text>
+                    <Text style={{ fontSize: 10, color: '#9ca3af', marginTop: 4 }}>
+                      (Manuel koordinat değişikliği adresi etkilemez)
+                    </Text>
+                  </View>
+                </View>
+              )}
+            </View>
+            <Text style={[styles.cancelModalMessage, { marginBottom: 16 }]}>
+              Proje konumu girilen değerler ile güncellenecektir. Onaylıyor musunuz?
+            </Text>
+            <View style={styles.cancelModalButtons}>
+              <TouchableOpacity
+                style={styles.cancelModalCancelButton}
+                onPress={() => setLocationModalVisible(false)}
+              >
+                <Text style={styles.cancelModalCancelButtonText}>Vazgeç</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.cancelModalConfirmButton}
+                onPress={confirmUpdateLocation}
+              >
+                <Text style={styles.cancelModalConfirmButtonText}>Onayla ve Güncelle</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
       </Modal>
 
       <Modal visible={cancelModalVisible} transparent animationType="fade">

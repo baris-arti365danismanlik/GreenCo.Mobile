@@ -46,9 +46,23 @@ export default function OperationsDashboard() {
     try {
       setLoading(true);
 
-      const { data: invoices } = await supabase
+      //--- 1. Invoices (Hakediş Durumu) ---
+      let invoicesQuery = supabase
         .from('invoices')
-        .select('total_amount, status');
+        .select(`
+          total_amount, 
+          status,
+          timesheets!inner(
+            project_id,
+            projects_greenco!inner(company_id)
+          )
+        `);
+
+      if (profile?.company_id) {
+        invoicesQuery = invoicesQuery.eq('timesheets.projects_greenco.company_id', profile.company_id);
+      }
+
+      const { data: invoices } = await invoicesQuery;
 
       const finalizedInvoiceAmount = invoices
         ?.filter(inv => inv.status === 'approved')
@@ -58,10 +72,24 @@ export default function OperationsDashboard() {
         ?.filter(inv => inv.status === 'submitted')
         .reduce((sum, inv) => sum + (inv.total_amount || 0), 0) || 0;
 
-      const { data: assignments } = await supabase
+
+      //--- 2. Active Personnel (Aktif Outsource) ---
+      // We filter by project's company
+      let assignmentsQuery = supabase
         .from('project_assignments')
-        .select('worker_id, profiles!inner(personnel_type), created_at')
+        .select(`
+          worker_id, 
+          profiles!inner(personnel_type), 
+          created_at,
+          project:projects_greenco!inner(company_id)
+        `)
         .is('removed_at', null);
+
+      if (profile?.company_id) {
+        assignmentsQuery = assignmentsQuery.eq('project.company_id', profile.company_id);
+      }
+
+      const { data: assignments } = await assignmentsQuery;
 
       const activeOutsourcePersonnel = assignments?.filter(a => {
         const profile = Array.isArray(a.profiles) ? a.profiles[0] : a.profiles;
@@ -76,18 +104,37 @@ export default function OperationsDashboard() {
         return createdDate.getMonth() === currentMonth && createdDate.getFullYear() === currentYear;
       }).length || 0;
 
-      const { data: requests } = await supabase
+
+      //--- 3. Personnel Requests (Talep Durumları) ---
+      let requestsQuery = supabase
         .from('personnel_requests')
-        .select('status');
+        .select(`
+          status,
+          project:projects_greenco!inner(company_id)
+        `);
+
+      if (profile?.company_id) {
+        requestsQuery = requestsQuery.eq('project.company_id', profile.company_id);
+      }
+
+      const { data: requests } = await requestsQuery;
 
       const pendingRequests = requests?.filter(r => r.status === 'pending').length || 0;
       const approvedRequests = requests?.filter(r => r.status === 'approved' || r.status === 'awaiting_assignment').length || 0;
       const rejectedRequests = requests?.filter(r => r.status === 'rejected').length || 0;
 
-      const { data: projectInvoices } = await supabase
+
+      //--- 4. Project Costs (Maliyet Analizi) ---
+      let projectInvoicesQuery = supabase
         .from('invoices')
-        .select('total_amount, timesheets!inner(project_id, projects_greenco!inner(name))')
+        .select('total_amount, timesheets!inner(project_id, projects_greenco!inner(name, company_id))')
         .eq('status', 'approved');
+
+      if (profile?.company_id) {
+        projectInvoicesQuery = projectInvoicesQuery.eq('timesheets.projects_greenco.company_id', profile.company_id);
+      }
+
+      const { data: projectInvoices } = await projectInvoicesQuery;
 
       const projectCostsMap = projectInvoices?.reduce((acc: any, inv: any) => {
         const projectName = inv.timesheets?.projects_greenco?.name;
@@ -476,6 +523,6 @@ const styles = StyleSheet.create({
   },
   quickActionDesc: {
     fontSize: 12,
-    color: COLORS.textSecondary,
+    color: COLORS.textLight,
   },
 });

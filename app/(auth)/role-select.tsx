@@ -68,7 +68,7 @@ const roles: RoleOption[] = [
 
 export default function RoleSelect() {
   const router = useRouter();
-  const { profile } = useAuth();
+  const { profile, signOut } = useAuth();
 
   const handleRoleSelect = (role: RoleOption) => {
     router.replace(role.route);
@@ -105,22 +105,43 @@ export default function RoleSelect() {
         <Text style={styles.subtitle}>{profile?.full_name || 'Kullanıcı'}</Text>
 
         <View style={styles.rolesContainer}>
-          {availableRoles.map((role) => (
-            <TouchableOpacity
-              key={role.key}
-              style={[styles.roleBtn, { borderLeftColor: role.color, borderLeftWidth: 4 }]}
-              onPress={() => handleRoleSelect(role)}
-            >
-              <View style={[styles.iconBox, { backgroundColor: role.color + '10' }]}>
-                <role.icon size={24} color={role.color} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.roleTitle}>{role.title}</Text>
-                <Text style={styles.roleDesc}>{role.desc}</Text>
-              </View>
-              <ChevronRight size={20} color={COLORS.textLight} />
-            </TouchableOpacity>
-          ))}
+          {availableRoles.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyStateText}>
+                Hesabınıza tanımlanmış aktif bir rol veya modül bulunamadı.
+              </Text>
+              <Text style={styles.emptyStateSubtext}>
+                Lütfen sistem yöneticiniz ile iletişime geçiniz.
+              </Text>
+            </View>
+          ) : (
+            availableRoles.map((role) => (
+              <TouchableOpacity
+                key={role.key}
+                style={[styles.roleBtn, { borderLeftColor: role.color, borderLeftWidth: 4 }]}
+                onPress={() => handleRoleSelect(role)}
+              >
+                <View style={[styles.iconBox, { backgroundColor: role.color + '10' }]}>
+                  <role.icon size={24} color={role.color} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.roleTitle}>{role.title}</Text>
+                  <Text style={styles.roleDesc}>{role.desc}</Text>
+                </View>
+                <ChevronRight size={20} color={COLORS.textLight} />
+              </TouchableOpacity>
+            ))
+          )}
+
+          <TouchableOpacity
+            style={styles.logoutBtn}
+            onPress={async () => {
+              await signOut();
+              router.replace('/sign-in');
+            }}
+          >
+            <Text style={styles.logoutText}>Çıkış Yap</Text>
+          </TouchableOpacity>
         </View>
       </ScrollView>
     </View>
@@ -184,5 +205,40 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: COLORS.textLight,
     marginTop: 2,
+  },
+  logoutBtn: {
+    marginTop: 20,
+    padding: 16,
+    borderRadius: 12,
+    backgroundColor: '#fee2e2',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#fecaca',
+  },
+  logoutText: {
+    color: '#ef4444',
+    fontWeight: '700',
+    fontSize: 16,
+  },
+  emptyState: {
+    alignItems: 'center',
+    padding: 20,
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    marginBottom: 20,
+  },
+  emptyStateText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.secondary,
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  emptyStateSubtext: {
+    fontSize: 14,
+    color: COLORS.textLight,
+    textAlign: 'center',
   },
 });

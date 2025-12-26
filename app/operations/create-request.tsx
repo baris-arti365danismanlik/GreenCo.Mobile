@@ -149,12 +149,18 @@ export default function CreateRequestScreen() {
 
   const loadData = async () => {
     try {
+      let projectsQuery = supabase
+        .from('projects_greenco')
+        .select('id, name')
+        .eq('is_active', true)
+        .order('name');
+
+      if (profile?.company_id) {
+        projectsQuery = projectsQuery.eq('company_id', profile.company_id);
+      }
+
       const [projectsRes, projectManagersRes, managersRes, typesRes] = await Promise.all([
-        supabase
-          .from('projects_greenco')
-          .select('id, name')
-          .eq('is_active', true)
-          .order('name'),
+        projectsQuery,
         supabase
           .from('project_managers')
           .select('project_id, manager_id'),
@@ -696,165 +702,45 @@ export default function CreateRequestScreen() {
 
       <SafeAreaView style={styles.container} edges={['top']}>
         <View style={styles.header}>
-        <TouchableOpacity onPress={() => isEditMode ? router.back() : setStep('project-type')}>
-          <ArrowLeft size={24} color={COLORS.secondary} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>{isEditMode ? 'Personel Talebini Düzenle' : 'Personel Talebi Oluştur'}</Text>
-        <View style={{ width: 24 }} />
-      </View>
+          <TouchableOpacity onPress={() => isEditMode ? router.back() : setStep('project-type')}>
+            <ArrowLeft size={24} color={COLORS.secondary} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>{isEditMode ? 'Personel Talebini Düzenle' : 'Personel Talebi Oluştur'}</Text>
+          <View style={{ width: 24 }} />
+        </View>
 
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
-      >
-      <ScrollView
-        style={styles.content}
-        contentContainerStyle={{ paddingBottom: 40 }}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>PROJE BİLGİLERİ</Text>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+        >
+          <ScrollView
+            style={styles.content}
+            contentContainerStyle={{ paddingBottom: 40 }}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>PROJE BİLGİLERİ</Text>
 
-          {!isNewProject ? (
-            <View style={styles.field}>
-              <Text style={styles.label}>Proje <Text style={styles.required}>*</Text></Text>
-              {projects.length === 0 ? (
-                <Text style={styles.emptyText}>Henüz proje yok</Text>
-              ) : selectedProject ? (
-                <View style={styles.selectedContainer}>
-                  <Text style={styles.selectedValue}>
-                    {projects.find(p => p.id === selectedProject)?.name}
-                  </Text>
-                  <TouchableOpacity
-                    onPress={() => {
-                      setSelectedProject('');
-                      setProjectName('');
-                      setProjectStartDate('');
-                      setProjectEndDate('');
-                      setPositions([{ type: '', count: '', criminal_record: 'yok', certificates: '' }]);
-                    }}
-                    style={styles.clearButton}
-                  >
-                    <Text style={styles.clearButtonText}>Değiştir</Text>
-                  </TouchableOpacity>
-                </View>
-              ) : (
-                <>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Proje ara..."
-                    value={projectSearch}
-                    onChangeText={setProjectSearch}
-                  />
-                  <ScrollView style={styles.projectScrollView} nestedScrollEnabled>
-                    <View style={styles.selectContainer}>
-                      {filteredProjects.map((project) => (
-                        <TouchableOpacity
-                          key={project.id}
-                          style={styles.selectItem}
-                          onPress={() => {
-                            handleExistingProjectSelect(project.id);
-                            setProjectSearch('');
-                          }}
-                        >
-                          <Text style={styles.selectItemText}>
-                            {project.name}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  </ScrollView>
-                </>
-              )}
-            </View>
-          ) : (
-            <View style={styles.field}>
-              <Text style={styles.label}>Proje Adı <Text style={styles.required}>*</Text></Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Proje adını girin"
-                value={projectName}
-                onChangeText={setProjectName}
-              />
-            </View>
-          )}
-
-          <View style={styles.field}>
-            <Text style={styles.label}>Başlangıç Tarihi <Text style={styles.required}>*</Text></Text>
-            <TextInput
-              style={styles.input}
-              placeholder="YYYY-MM-DD (Örn: 2025-12-01)"
-              value={projectStartDate}
-              onChangeText={setProjectStartDate}
-            />
-          </View>
-
-          <View style={styles.field}>
-            <Text style={styles.label}>Bitiş Tarihi <Text style={styles.required}>*</Text></Text>
-            <TextInput
-              style={styles.input}
-              placeholder="YYYY-MM-DD (Örn: 2026-06-30)"
-              value={projectEndDate}
-              onChangeText={setProjectEndDate}
-            />
-          </View>
-
-          {isNewProject && (
-            <>
-              <View style={styles.field}>
-                <Text style={styles.label}>İl <Text style={styles.required}>*</Text></Text>
-                {projectCity ? (
-                  <View style={styles.selectedContainer}>
-                    <Text style={styles.selectedValue}>{projectCity}</Text>
-                    <TouchableOpacity
-                      onPress={() => {
-                        setProjectCity('');
-                        setProjectDistrict('');
-                      }}
-                      style={styles.clearButton}
-                    >
-                      <Text style={styles.clearButtonText}>Değiştir</Text>
-                    </TouchableOpacity>
-                  </View>
-                ) : (
-                  <>
-                    <TextInput
-                      style={styles.input}
-                      placeholder="İl ara..."
-                      value={citySearch}
-                      onChangeText={setCitySearch}
-                    />
-                    <ScrollView style={styles.typeScrollView} nestedScrollEnabled>
-                      <View style={styles.selectContainer}>
-                        {filteredCities.map((city) => (
-                          <TouchableOpacity
-                            key={city}
-                            style={styles.selectItem}
-                            onPress={() => {
-                              setProjectCity(city);
-                              setProjectDistrict('');
-                              setCitySearch('');
-                            }}
-                          >
-                            <Text style={styles.selectItemText}>{city}</Text>
-                          </TouchableOpacity>
-                        ))}
-                      </View>
-                    </ScrollView>
-                  </>
-                )}
-              </View>
-
-              {projectCity && (
+              {!isNewProject ? (
                 <View style={styles.field}>
-                  <Text style={styles.label}>İlçe <Text style={styles.required}>*</Text></Text>
-                  {projectDistrict ? (
+                  <Text style={styles.label}>Proje <Text style={styles.required}>*</Text></Text>
+                  {projects.length === 0 ? (
+                    <Text style={styles.emptyText}>Henüz proje yok</Text>
+                  ) : selectedProject ? (
                     <View style={styles.selectedContainer}>
-                      <Text style={styles.selectedValue}>{projectDistrict}</Text>
+                      <Text style={styles.selectedValue}>
+                        {projects.find(p => p.id === selectedProject)?.name}
+                      </Text>
                       <TouchableOpacity
-                        onPress={() => setProjectDistrict('')}
+                        onPress={() => {
+                          setSelectedProject('');
+                          setProjectName('');
+                          setProjectStartDate('');
+                          setProjectEndDate('');
+                          setPositions([{ type: '', count: '', criminal_record: 'yok', certificates: '' }]);
+                        }}
                         style={styles.clearButton}
                       >
                         <Text style={styles.clearButtonText}>Değiştir</Text>
@@ -864,22 +750,24 @@ export default function CreateRequestScreen() {
                     <>
                       <TextInput
                         style={styles.input}
-                        placeholder="İlçe ara..."
-                        value={districtSearch}
-                        onChangeText={setDistrictSearch}
+                        placeholder="Proje ara..."
+                        value={projectSearch}
+                        onChangeText={setProjectSearch}
                       />
-                      <ScrollView style={styles.typeScrollView} nestedScrollEnabled>
+                      <ScrollView style={styles.projectScrollView} nestedScrollEnabled>
                         <View style={styles.selectContainer}>
-                          {filteredDistricts.map((district) => (
+                          {filteredProjects.map((project) => (
                             <TouchableOpacity
-                              key={district}
+                              key={project.id}
                               style={styles.selectItem}
                               onPress={() => {
-                                setProjectDistrict(district);
-                                setDistrictSearch('');
+                                handleExistingProjectSelect(project.id);
+                                setProjectSearch('');
                               }}
                             >
-                              <Text style={styles.selectItemText}>{district}</Text>
+                              <Text style={styles.selectItemText}>
+                                {project.name}
+                              </Text>
                             </TouchableOpacity>
                           ))}
                         </View>
@@ -887,23 +775,50 @@ export default function CreateRequestScreen() {
                     </>
                   )}
                 </View>
+              ) : (
+                <View style={styles.field}>
+                  <Text style={styles.label}>Proje Adı <Text style={styles.required}>*</Text></Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Proje adını girin"
+                    value={projectName}
+                    onChangeText={setProjectName}
+                  />
+                </View>
               )}
-            </>
-          )}
 
-          {isNewProject && (
-            <View style={styles.field}>
-              <Text style={styles.label}>Proje Yöneticisi <Text style={styles.required}>*</Text></Text>
-              {!isNewManager ? (
+              <View style={styles.field}>
+                <Text style={styles.label}>Başlangıç Tarihi <Text style={styles.required}>*</Text></Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="YYYY-MM-DD (Örn: 2025-12-01)"
+                  value={projectStartDate}
+                  onChangeText={setProjectStartDate}
+                />
+              </View>
+
+              <View style={styles.field}>
+                <Text style={styles.label}>Bitiş Tarihi <Text style={styles.required}>*</Text></Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="YYYY-MM-DD (Örn: 2026-06-30)"
+                  value={projectEndDate}
+                  onChangeText={setProjectEndDate}
+                />
+              </View>
+
+              {isNewProject && (
                 <>
-                  {managers.length > 0 ? (
-                    selectedManager ? (
+                  <View style={styles.field}>
+                    <Text style={styles.label}>İl <Text style={styles.required}>*</Text></Text>
+                    {projectCity ? (
                       <View style={styles.selectedContainer}>
-                        <Text style={styles.selectedValue}>
-                          {managers.find(m => m.id === selectedManager)?.full_name}
-                        </Text>
+                        <Text style={styles.selectedValue}>{projectCity}</Text>
                         <TouchableOpacity
-                          onPress={() => setSelectedManager('')}
+                          onPress={() => {
+                            setProjectCity('');
+                            setProjectDistrict('');
+                          }}
                           style={styles.clearButton}
                         >
                           <Text style={styles.clearButtonText}>Değiştir</Text>
@@ -913,318 +828,409 @@ export default function CreateRequestScreen() {
                       <>
                         <TextInput
                           style={styles.input}
-                          placeholder="Proje yöneticisi ara..."
-                          value={managerSearch}
-                          onChangeText={setManagerSearch}
+                          placeholder="İl ara..."
+                          value={citySearch}
+                          onChangeText={setCitySearch}
                         />
-                        <ScrollView style={styles.projectScrollView} nestedScrollEnabled>
+                        <ScrollView style={styles.typeScrollView} nestedScrollEnabled>
                           <View style={styles.selectContainer}>
-                            {filteredManagers.map((manager) => (
+                            {filteredCities.map((city) => (
                               <TouchableOpacity
-                                key={manager.id}
+                                key={city}
                                 style={styles.selectItem}
                                 onPress={() => {
-                                  setSelectedManager(manager.id);
-                                  setManagerSearch('');
+                                  setProjectCity(city);
+                                  setProjectDistrict('');
+                                  setCitySearch('');
                                 }}
                               >
-                                <Text style={styles.selectItemText}>
-                                  {manager.full_name}
-                                </Text>
+                                <Text style={styles.selectItemText}>{city}</Text>
                               </TouchableOpacity>
                             ))}
                           </View>
                         </ScrollView>
                       </>
-                    )
-                  ) : (
-                    <Text style={styles.emptyText}>Henüz proje yöneticisi yok</Text>
-                  )}
-                  <TouchableOpacity
-                    style={styles.newProfileButton}
-                    onPress={() => setIsNewManager(true)}
-                  >
-                    <Plus size={16} color={COLORS.primary} />
-                    <Text style={styles.newProfileText}>Yeni Profil Oluştur</Text>
-                  </TouchableOpacity>
-                </>
-              ) : (
-                <View style={styles.newManagerSection}>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Ad Soyad"
-                    value={managerFullName}
-                    onChangeText={setManagerFullName}
-                  />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Telefon (+905551234567)"
-                    value={managerPhone}
-                    onChangeText={setManagerPhone}
-                  />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Şifre"
-                    secureTextEntry
-                    value={managerPassword}
-                    onChangeText={setManagerPassword}
-                  />
-                  <TouchableOpacity
-                    style={styles.cancelNewProfile}
-                    onPress={() => {
-                      setIsNewManager(false);
-                      setManagerFullName('');
-                      setManagerPhone('');
-                      setManagerPassword('');
-                    }}
-                  >
-                    <Text style={styles.cancelText}>İptal</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-            </View>
-          )}
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>TALEP EDİLEN PERSONEL</Text>
-
-          {positions.map((position, index) => {
-            const selectedType = personnelTypes.find(t => t.id === position.type);
-            const headerTitle = !isNewProject && selectedType && position.count
-              ? `Mevcut Personel #${index + 1}: ${position.count} ${selectedType.name}`
-              : `Personel #${index + 1}`;
-
-            return (
-            <View key={index} style={styles.positionCard}>
-              <View style={styles.positionHeader}>
-                <View style={styles.positionHeaderLeft}>
-                  <Text style={styles.positionTitle}>{headerTitle}</Text>
-                  {!isNewProject && selectedType && position.isEditing !== true && (
-                    <TouchableOpacity
-                      style={styles.editButton}
-                      onPress={() => togglePositionEdit(index)}
-                    >
-                      <Text style={styles.editButtonText}>Değiştir</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-                {positions.length > 1 && (
-                  <TouchableOpacity
-                    style={styles.removeButton}
-                    onPress={() => removePosition(index)}
-                  >
-                    <Text style={styles.removeButtonText}>Kaldır</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-
-              {(isNewProject || position.isEditing === true) && (
-              <>
-              <View style={styles.field}>
-                <Text style={styles.label}>Meslek Türü <Text style={styles.required}>*</Text></Text>
-                {position.type ? (
-                  <View style={styles.selectedContainer}>
-                    <Text style={styles.selectedValue}>
-                      {personnelTypes.find(t => t.id === position.type)?.name}
-                    </Text>
-                    <TouchableOpacity
-                      onPress={() => {
-                        updatePosition(index, 'type', '');
-                        setPersonnelTypeSearch('');
-                      }}
-                      style={styles.clearButton}
-                    >
-                      <Text style={styles.clearButtonText}>Değiştir</Text>
-                    </TouchableOpacity>
+                    )}
                   </View>
-                ) : (
-                  <>
-                    <TextInput
-                      style={styles.input}
-                      placeholder="Meslek ara..."
-                      value={personnelTypeSearch}
-                      onChangeText={setPersonnelTypeSearch}
-                    />
-                    <ScrollView style={styles.typeScrollView} nestedScrollEnabled>
-                      <View style={styles.selectContainer}>
-                        {filteredPersonnelTypes.map((type) => (
+
+                  {projectCity && (
+                    <View style={styles.field}>
+                      <Text style={styles.label}>İlçe <Text style={styles.required}>*</Text></Text>
+                      {projectDistrict ? (
+                        <View style={styles.selectedContainer}>
+                          <Text style={styles.selectedValue}>{projectDistrict}</Text>
                           <TouchableOpacity
-                            key={type.id}
-                            style={styles.selectItem}
-                            onPress={() => {
-                              updatePosition(index, 'type', type.id);
-                              setPersonnelTypeSearch('');
-                            }}
+                            onPress={() => setProjectDistrict('')}
+                            style={styles.clearButton}
                           >
-                            <Text style={styles.selectItemText}>
-                              {type.name}
-                            </Text>
+                            <Text style={styles.clearButtonText}>Değiştir</Text>
                           </TouchableOpacity>
-                        ))}
-                      </View>
-                    </ScrollView>
-                    <TouchableOpacity
-                      style={styles.newProfileButton}
-                      onPress={() => setShowNewTypeModal(true)}
-                    >
-                      <Plus size={16} color={COLORS.primary} />
-                      <Text style={styles.newProfileText}>Yeni Meslek Türü Ekle</Text>
-                    </TouchableOpacity>
-                  </>
-                )}
-              </View>
+                        </View>
+                      ) : (
+                        <>
+                          <TextInput
+                            style={styles.input}
+                            placeholder="İlçe ara..."
+                            value={districtSearch}
+                            onChangeText={setDistrictSearch}
+                          />
+                          <ScrollView style={styles.typeScrollView} nestedScrollEnabled>
+                            <View style={styles.selectContainer}>
+                              {filteredDistricts.map((district) => (
+                                <TouchableOpacity
+                                  key={district}
+                                  style={styles.selectItem}
+                                  onPress={() => {
+                                    setProjectDistrict(district);
+                                    setDistrictSearch('');
+                                  }}
+                                >
+                                  <Text style={styles.selectItemText}>{district}</Text>
+                                </TouchableOpacity>
+                              ))}
+                            </View>
+                          </ScrollView>
+                        </>
+                      )}
+                    </View>
+                  )}
+                </>
+              )}
 
-              <View style={styles.field}>
-                <Text style={styles.label}>Personel Adedi <Text style={styles.required}>*</Text></Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Örn: 5"
-                  keyboardType="numeric"
-                  value={position.count}
-                  onChangeText={(value) => updatePosition(index, 'count', value)}
-                />
-              </View>
-
-              <View style={styles.field}>
-                <Text style={styles.label}>Sabıka Kaydı</Text>
-                <View style={styles.selectContainer}>
-                  {CRIMINAL_RECORD_OPTIONS.map((option) => (
-                    <TouchableOpacity
-                      key={option}
-                      style={[
-                        styles.selectItem,
-                        position.criminal_record === option && styles.selectItemActive,
-                      ]}
-                      onPress={() => updatePosition(index, 'criminal_record', option)}
-                    >
-                      <Text
-                        style={[
-                          styles.selectItemText,
-                          position.criminal_record === option && styles.selectItemTextActive,
-                        ]}
+              {isNewProject && (
+                <View style={styles.field}>
+                  <Text style={styles.label}>Proje Yöneticisi <Text style={styles.required}>*</Text></Text>
+                  {!isNewManager ? (
+                    <>
+                      {managers.length > 0 ? (
+                        selectedManager ? (
+                          <View style={styles.selectedContainer}>
+                            <Text style={styles.selectedValue}>
+                              {managers.find(m => m.id === selectedManager)?.full_name}
+                            </Text>
+                            <TouchableOpacity
+                              onPress={() => setSelectedManager('')}
+                              style={styles.clearButton}
+                            >
+                              <Text style={styles.clearButtonText}>Değiştir</Text>
+                            </TouchableOpacity>
+                          </View>
+                        ) : (
+                          <>
+                            <TextInput
+                              style={styles.input}
+                              placeholder="Proje yöneticisi ara..."
+                              value={managerSearch}
+                              onChangeText={setManagerSearch}
+                            />
+                            <ScrollView style={styles.projectScrollView} nestedScrollEnabled>
+                              <View style={styles.selectContainer}>
+                                {filteredManagers.map((manager) => (
+                                  <TouchableOpacity
+                                    key={manager.id}
+                                    style={styles.selectItem}
+                                    onPress={() => {
+                                      setSelectedManager(manager.id);
+                                      setManagerSearch('');
+                                    }}
+                                  >
+                                    <Text style={styles.selectItemText}>
+                                      {manager.full_name}
+                                    </Text>
+                                  </TouchableOpacity>
+                                ))}
+                              </View>
+                            </ScrollView>
+                          </>
+                        )
+                      ) : (
+                        <Text style={styles.emptyText}>Henüz proje yöneticisi yok</Text>
+                      )}
+                      <TouchableOpacity
+                        style={styles.newProfileButton}
+                        onPress={() => setIsNewManager(true)}
                       >
-                        Sabıka Kaydı {option.toUpperCase()}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
+                        <Plus size={16} color={COLORS.primary} />
+                        <Text style={styles.newProfileText}>Yeni Profil Oluştur</Text>
+                      </TouchableOpacity>
+                    </>
+                  ) : (
+                    <View style={styles.newManagerSection}>
+                      <TextInput
+                        style={styles.input}
+                        placeholder="Ad Soyad"
+                        value={managerFullName}
+                        onChangeText={setManagerFullName}
+                      />
+                      <TextInput
+                        style={styles.input}
+                        placeholder="Telefon (+905551234567)"
+                        value={managerPhone}
+                        onChangeText={setManagerPhone}
+                      />
+                      <TextInput
+                        style={styles.input}
+                        placeholder="Şifre"
+                        secureTextEntry
+                        value={managerPassword}
+                        onChangeText={setManagerPassword}
+                      />
+                      <TouchableOpacity
+                        style={styles.cancelNewProfile}
+                        onPress={() => {
+                          setIsNewManager(false);
+                          setManagerFullName('');
+                          setManagerPhone('');
+                          setManagerPassword('');
+                        }}
+                      >
+                        <Text style={styles.cancelText}>İptal</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
                 </View>
-              </View>
-
-              <View style={styles.field}>
-                <Text style={styles.label}>Talep Edilen Sertifikalar</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Virgülle ayırın (Örn: İş Güvenliği, Forklift)"
-                  value={position.certificates}
-                  onChangeText={(value) => updatePosition(index, 'certificates', value)}
-                />
-              </View>
-              </>
               )}
             </View>
-            );
-          })}
 
-          <TouchableOpacity style={styles.addPositionButton} onPress={addPosition}>
-            <Plus size={20} color={COLORS.primary} />
-            <Text style={styles.addPositionText}>Personel Ekle</Text>
-          </TouchableOpacity>
-        </View>
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>TALEP EDİLEN PERSONEL</Text>
 
-        <View style={styles.section}>
-          <Text style={styles.label}>Notlar (İsteğe bağlı)</Text>
-          <TextInput
-            style={[styles.input, styles.textArea]}
-            placeholder="Ek açıklamalar..."
-            multiline
-            numberOfLines={4}
-            value={notes}
-            onChangeText={setNotes}
-          />
-        </View>
+              {positions.map((position, index) => {
+                const selectedType = personnelTypes.find(t => t.id === position.type);
+                const headerTitle = !isNewProject && selectedType && position.count
+                  ? `Mevcut Personel #${index + 1}: ${position.count} ${selectedType.name}`
+                  : `Personel #${index + 1}`;
 
-        <TouchableOpacity
-          style={[styles.submitButton, loading && styles.submitButtonDisabled]}
-          onPress={handleSubmit}
-          disabled={loading}
-        >
-          <Send size={20} color="white" />
-          <Text style={styles.submitButtonText}>
-            {loading ? 'Gönderiliyor...' : 'Talebi Gönder'}
-          </Text>
-        </TouchableOpacity>
-      </ScrollView>
-      </KeyboardAvoidingView>
+                return (
+                  <View key={index} style={styles.positionCard}>
+                    <View style={styles.positionHeader}>
+                      <View style={styles.positionHeaderLeft}>
+                        <Text style={styles.positionTitle}>{headerTitle}</Text>
+                        {!isNewProject && selectedType && position.isEditing !== true && (
+                          <TouchableOpacity
+                            style={styles.editButton}
+                            onPress={() => togglePositionEdit(index)}
+                          >
+                            <Text style={styles.editButtonText}>Değiştir</Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                      {positions.length > 1 && (
+                        <TouchableOpacity
+                          style={styles.removeButton}
+                          onPress={() => removePosition(index)}
+                        >
+                          <Text style={styles.removeButtonText}>Kaldır</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
 
-      <Modal visible={showNewTypeModal} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Yeni Meslek Türü Ekle</Text>
-              <TouchableOpacity onPress={() => {
-                setShowNewTypeModal(false);
-                setNewTypeName('');
-              }}>
-                <Text style={styles.modalClose}>✕</Text>
+                    {(isNewProject || position.isEditing === true) && (
+                      <>
+                        <View style={styles.field}>
+                          <Text style={styles.label}>Meslek Türü <Text style={styles.required}>*</Text></Text>
+                          {position.type ? (
+                            <View style={styles.selectedContainer}>
+                              <Text style={styles.selectedValue}>
+                                {personnelTypes.find(t => t.id === position.type)?.name}
+                              </Text>
+                              <TouchableOpacity
+                                onPress={() => {
+                                  updatePosition(index, 'type', '');
+                                  setPersonnelTypeSearch('');
+                                }}
+                                style={styles.clearButton}
+                              >
+                                <Text style={styles.clearButtonText}>Değiştir</Text>
+                              </TouchableOpacity>
+                            </View>
+                          ) : (
+                            <>
+                              <TextInput
+                                style={styles.input}
+                                placeholder="Meslek ara..."
+                                value={personnelTypeSearch}
+                                onChangeText={setPersonnelTypeSearch}
+                              />
+                              <ScrollView style={styles.typeScrollView} nestedScrollEnabled>
+                                <View style={styles.selectContainer}>
+                                  {filteredPersonnelTypes.map((type) => (
+                                    <TouchableOpacity
+                                      key={type.id}
+                                      style={styles.selectItem}
+                                      onPress={() => {
+                                        updatePosition(index, 'type', type.id);
+                                        setPersonnelTypeSearch('');
+                                      }}
+                                    >
+                                      <Text style={styles.selectItemText}>
+                                        {type.name}
+                                      </Text>
+                                    </TouchableOpacity>
+                                  ))}
+                                </View>
+                              </ScrollView>
+                              <TouchableOpacity
+                                style={styles.newProfileButton}
+                                onPress={() => setShowNewTypeModal(true)}
+                              >
+                                <Plus size={16} color={COLORS.primary} />
+                                <Text style={styles.newProfileText}>Yeni Meslek Türü Ekle</Text>
+                              </TouchableOpacity>
+                            </>
+                          )}
+                        </View>
+
+                        <View style={styles.field}>
+                          <Text style={styles.label}>Personel Adedi <Text style={styles.required}>*</Text></Text>
+                          <TextInput
+                            style={styles.input}
+                            placeholder="Örn: 5"
+                            keyboardType="numeric"
+                            value={position.count}
+                            onChangeText={(value) => updatePosition(index, 'count', value)}
+                          />
+                        </View>
+
+                        <View style={styles.field}>
+                          <Text style={styles.label}>Sabıka Kaydı</Text>
+                          <View style={styles.selectContainer}>
+                            {CRIMINAL_RECORD_OPTIONS.map((option) => (
+                              <TouchableOpacity
+                                key={option}
+                                style={[
+                                  styles.selectItem,
+                                  position.criminal_record === option && styles.selectItemActive,
+                                ]}
+                                onPress={() => updatePosition(index, 'criminal_record', option)}
+                              >
+                                <Text
+                                  style={[
+                                    styles.selectItemText,
+                                    position.criminal_record === option && styles.selectItemTextActive,
+                                  ]}
+                                >
+                                  Sabıka Kaydı {option.toUpperCase()}
+                                </Text>
+                              </TouchableOpacity>
+                            ))}
+                          </View>
+                        </View>
+
+                        <View style={styles.field}>
+                          <Text style={styles.label}>Talep Edilen Sertifikalar</Text>
+                          <TextInput
+                            style={styles.input}
+                            placeholder="Virgülle ayırın (Örn: İş Güvenliği, Forklift)"
+                            value={position.certificates}
+                            onChangeText={(value) => updatePosition(index, 'certificates', value)}
+                          />
+                        </View>
+                      </>
+                    )}
+                  </View>
+                );
+              })}
+
+              <TouchableOpacity style={styles.addPositionButton} onPress={addPosition}>
+                <Plus size={20} color={COLORS.primary} />
+                <Text style={styles.addPositionText}>Personel Ekle</Text>
               </TouchableOpacity>
             </View>
 
-            <TextInput
-              style={styles.input}
-              placeholder="Meslek adı (örn: Temizlik Personeli)"
-              value={newTypeName}
-              onChangeText={setNewTypeName}
-            />
+            <View style={styles.section}>
+              <Text style={styles.label}>Notlar (İsteğe bağlı)</Text>
+              <TextInput
+                style={[styles.input, styles.textArea]}
+                placeholder="Ek açıklamalar..."
+                multiline
+                numberOfLines={4}
+                value={notes}
+                onChangeText={setNotes}
+              />
+            </View>
 
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={styles.modalCancelButton}
-                onPress={() => {
+            <TouchableOpacity
+              style={[styles.submitButton, loading && styles.submitButtonDisabled]}
+              onPress={handleSubmit}
+              disabled={loading}
+            >
+              <Send size={20} color="white" />
+              <Text style={styles.submitButtonText}>
+                {loading ? 'Gönderiliyor...' : 'Talebi Gönder'}
+              </Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </KeyboardAvoidingView>
+
+        <Modal visible={showNewTypeModal} animationType="slide" transparent>
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Yeni Meslek Türü Ekle</Text>
+                <TouchableOpacity onPress={() => {
                   setShowNewTypeModal(false);
                   setNewTypeName('');
-                }}
-              >
-                <Text style={styles.modalCancelText}>İptal</Text>
-              </TouchableOpacity>
+                }}>
+                  <Text style={styles.modalClose}>✕</Text>
+                </TouchableOpacity>
+              </View>
 
-              <TouchableOpacity
-                style={[styles.modalSaveButton, addingNewType && styles.modalSaveButtonDisabled]}
-                onPress={async () => {
-                  if (!newTypeName.trim()) {
-                    return;
-                  }
+              <TextInput
+                style={styles.input}
+                placeholder="Meslek adı (örn: Temizlik Personeli)"
+                value={newTypeName}
+                onChangeText={setNewTypeName}
+              />
 
-                  try {
-                    setAddingNewType(true);
-                    const { data, error } = await supabase
-                      .from('personnel_types')
-                      .insert({ name: newTypeName.trim(), is_active: true })
-                      .select()
-                      .single();
-
-                    if (error) throw error;
-
-                    setPersonnelTypes([...personnelTypes, data]);
+              <View style={styles.modalButtons}>
+                <TouchableOpacity
+                  style={styles.modalCancelButton}
+                  onPress={() => {
                     setShowNewTypeModal(false);
                     setNewTypeName('');
-                  } catch (error: any) {
-                    console.error('Error adding personnel type:', error);
-                  } finally {
-                    setAddingNewType(false);
-                  }
-                }}
-                disabled={addingNewType || !newTypeName.trim()}
-              >
-                <Text style={styles.modalSaveText}>
-                  {addingNewType ? 'Ekleniyor...' : 'Ekle'}
-                </Text>
-              </TouchableOpacity>
+                  }}
+                >
+                  <Text style={styles.modalCancelText}>İptal</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.modalSaveButton, addingNewType && styles.modalSaveButtonDisabled]}
+                  onPress={async () => {
+                    if (!newTypeName.trim()) {
+                      return;
+                    }
+
+                    try {
+                      setAddingNewType(true);
+                      const { data, error } = await supabase
+                        .from('personnel_types')
+                        .insert({ name: newTypeName.trim(), is_active: true })
+                        .select()
+                        .single();
+
+                      if (error) throw error;
+
+                      setPersonnelTypes([...personnelTypes, data]);
+                      setShowNewTypeModal(false);
+                      setNewTypeName('');
+                    } catch (error: any) {
+                      console.error('Error adding personnel type:', error);
+                    } finally {
+                      setAddingNewType(false);
+                    }
+                  }}
+                  disabled={addingNewType || !newTypeName.trim()}
+                >
+                  <Text style={styles.modalSaveText}>
+                    {addingNewType ? 'Ekleniyor...' : 'Ekle'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
-        </View>
-      </Modal>
-    </SafeAreaView>
+        </Modal>
+      </SafeAreaView>
     </>
   );
 }

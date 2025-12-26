@@ -22,15 +22,21 @@ export default function UnitWorkOrdersScreen() {
   const loadOrders = async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase
+
+      let query = supabase
         .from('unit_based_work_orders')
         .select(`
           *,
-          project:projects_greenco(name),
+          project:projects_greenco!inner(name, company_id),
           creator:profiles!unit_based_work_orders_created_by_fkey(full_name),
           service_type:service_types(name, unit_type)
-        `)
-        .order('created_at', { ascending: false });
+        `);
+
+      if (profile?.company_id) {
+        query = query.eq('project.company_id', profile.company_id);
+      }
+
+      const { data, error } = await query.order('created_at', { ascending: false });
 
       if (error) throw error;
       setOrders(data || []);

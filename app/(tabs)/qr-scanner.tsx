@@ -5,6 +5,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   Alert,
+  Platform,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Location from 'expo-location';
@@ -22,6 +23,7 @@ type Project = {
   latitude: number;
   longitude: number;
   geofence_radius_meters: number;
+  company_id: string;
 };
 
 export default function QRScanner() {
@@ -136,11 +138,23 @@ export default function QRScanner() {
     }
   };
 
+  const handleError = (message: string) => {
+    if (Platform.OS === 'web') {
+      alert(`Hata: ${message}`);
+      setScanType(null);
+      setScanning(false);
+      setProcessing(false);
+    } else {
+      Alert.alert('Hata', message, [
+        { text: 'Tamam', onPress: () => { setScanType(null); setScanning(false); setProcessing(false); } }
+      ]);
+    }
+  };
+
   const handleQRCodeScanned = async ({ data }: { data: string }) => {
     if (processing || !scanning) return;
 
     setProcessing(true);
-    setScanning(false);
 
     try {
       const { data: project, error: projectError } = await supabase
@@ -151,54 +165,59 @@ export default function QRScanner() {
         .maybeSingle();
 
       if (projectError || !project) {
-        Alert.alert('Hata', 'Geçersiz QR kodu');
-        setProcessing(false);
-        setScanType(null);
-        setScanning(false);
+        handleError('Geçersiz QR kodu');
         return;
       }
 
-      const today = new Date().toISOString().split('T')[0];
-      const { data: shift, error: shiftError } = await supabase
-        .from('shifts')
-        .select('*')
-        .eq('worker_id', profile?.id)
+      // 1. Önce personelin bu projeye atanıp atanmadığını kontrol et
+      const { data: assignment, error: assignmentError } = await supabase
+        .from('project_assignments')
+        .select('id')
         .eq('project_id', project.id)
-        .eq('shift_date', today)
-        .in('status', ['scheduled', 'in_progress'])
+        .or(`personnel_id.eq.${profile?.id},worker_id.eq.${profile?.id}`)
+        .is('removed_at', null)
         .maybeSingle();
 
-      if (shiftError || !shift) {
-        Alert.alert('Hata', 'Bugün bu projede vardiyınız bulunmuyor');
-        setProcessing(false);
-        setScanType(null);
-        setScanning(false);
+      if (!assignment) {
+        handleError('Bu projeye atanmış personel değilsiniz.');
         return;
       }
 
-      const locationResult = await verifyLocation(project);
-
-      if (!locationResult.verified) {
-        Alert.alert('Konum Doğrulama Hatası', locationResult.message);
-        setProcessing(false);
-        setScanType(null);
-        setScanning(false);
-        return;
-      }
-
-      const { data: existingAttendance } = await supabase
+      // 2. GLOBAL KONTROL: Kullanıcının HERHANGİ bir açık oturumu var mı?
+      const { data: activeAttendance } = await supabase
         .from('attendance_records')
         .select('*')
-        .eq('shift_id', shift.id)
+        .eq('worker_id', profile?.id)
+        .is('check_out_time', null)
         .maybeSingle();
 
-      if (existingAttendance) {
-        if (!existingAttendance.check_out_time) {
-          if (scanType === 'in') {
-            Alert.alert('Hata', 'Bu vardiya için zaten giriş yaptınız. Lütfen çıkış yapın.');
-            setProcessing(false);
-            setScanType(null);
-            setScanning(false);
+      if (activeAttendance) {
+        // --- AKTİF OTURUM VARSA ---
+
+        if (scanType === 'in') {
+          handleError('Zaten giriş kaydınız var. Lütfen önce çıkış yapın.');
+          return;
+        }
+
+        if (scanType === 'out') {
+          // Proje Kontrolü
+          if (activeAttendance.project_id !== project.id) {
+            handleError('Başka bir projede aktif girişiniz var. O projeden çıkış yapmalısınız.');
+            return;
+          }
+
+          const locationResult = await verifyLocation(project);
+          if (!locationResult.verified) {
+            if (Platform.OS === 'web') {
+              alert(`Konum Doğrulama Hatası: ${locationResult.message}`);
+              setScanType(null);
+              setScanning(false);
+              setProcessing(false);
+            } else {
+              Alert.alert('Konum Doğrulama Hatası', locationResult.message, [
+                { text: 'Tamam', onPress: () => { setScanType(null); setScanning(false); setProcessing(false); } }
+              ]);
+            }
             return;
           }
 
@@ -212,7 +231,7 @@ export default function QRScanner() {
                 check_out_qr_verified: true,
                 check_out_location_verified: locationResult.verified,
               })
-              .eq('id', existingAttendance.id);
+              .eq('id', activeAttendance.id);
 
             if (updateError) throw updateError;
 
@@ -221,11 +240,12 @@ export default function QRScanner() {
               .update({ last_qr_scan_at: new Date().toISOString() })
               .eq('id', profile?.id);
           } else {
+            // Offline logic
             await offlineStorage.savePendingAttendance({
               id: `offline_${Date.now()}`,
               user_id: profile?.id || '',
               project_id: project.id,
-              shift_id: shift.id,
+              shift_id: activeAttendance.shift_id,
               check_out_time: new Date().toISOString(),
               location_lat: locationResult.latitude || undefined,
               location_lon: locationResult.longitude || undefined,
@@ -236,67 +256,122 @@ export default function QRScanner() {
           }
 
           setSuccessMessage(isOnline ? 'Çıkış Başarılı' : 'Çıkış Kaydedildi (Çevrimdışı)');
-          setSuccess(true);
-        } else {
-          Alert.alert('Bilgi', 'Bu vardiya için zaten çıkış yaptınız');
           setScanType(null);
           setScanning(false);
-        }
-      } else {
-        if (scanType === 'out') {
-          Alert.alert('Hata', 'Bu vardiya için henüz giriş yapmadınız. Lütfen önce giriş yapın.');
           setProcessing(false);
-          setScanType(null);
-          setScanning(false);
+          setSuccess(true);
+        }
+
+      } else {
+        // --- AKTİF OTURUM YOKSA ---
+
+        if (scanType === 'out') {
+          handleError('Bu vardiya için henüz giriş yapmadınız. Lütfen önce giriş yapın.');
           return;
         }
 
-        if (isOnline) {
-          const { error: insertError } = await supabase
-            .from('attendance_records')
-            .insert({
-              shift_id: shift.id,
-              worker_id: profile?.id,
-              project_id: project.id,
-              check_in_time: new Date().toISOString(),
-              check_in_latitude: locationResult.latitude,
-              check_in_longitude: locationResult.longitude,
-              check_in_qr_verified: true,
-              check_in_location_verified: locationResult.verified,
-              is_synced: true,
-            });
+        if (scanType === 'in') {
+          const locationResult = await verifyLocation(project);
+          if (!locationResult.verified) {
+            if (Platform.OS === 'web') {
+              alert(`Konum Doğrulama Hatası: ${locationResult.message}`);
+              setScanType(null);
+              setScanning(false);
+              setProcessing(false);
+            } else {
+              Alert.alert('Konum Doğrulama Hatası', locationResult.message, [
+                { text: 'Tamam', onPress: () => { setScanType(null); setScanning(false); setProcessing(false); } }
+              ]);
+            }
+            return;
+          }
 
-          if (insertError) throw insertError;
+          // Vardiya Bul/Oluştur
+          const today = new Date().toISOString().split('T')[0];
+          let { data: shift, error: shiftError } = await supabase
+            .from('shifts')
+            .select('*')
+            .eq('worker_id', profile?.id)
+            .eq('project_id', project.id)
+            .eq('shift_date', today)
+            .in('status', ['scheduled', 'in_progress'])
+            .maybeSingle();
 
-          await supabase
-            .from('profiles')
-            .update({ last_qr_scan_at: new Date().toISOString() })
-            .eq('id', profile?.id);
-        } else {
-          await offlineStorage.savePendingAttendance({
-            id: `offline_${Date.now()}`,
-            user_id: profile?.id || '',
-            project_id: project.id,
-            shift_id: shift.id,
-            check_in_time: new Date().toISOString(),
-            location_lat: locationResult.latitude || undefined,
-            location_lon: locationResult.longitude || undefined,
-            is_synced: false,
-            timestamp: new Date().toISOString(),
-          });
-          await loadPendingCount();
+          if (!shift) {
+            const { data: newShift, error: createError } = await supabase
+              .from('shifts')
+              .insert({
+                worker_id: profile?.id,
+                project_id: project.id,
+                company_id: project.company_id,
+                shift_date: today,
+                status: 'in_progress',
+                start_time: '08:00',
+                end_time: '18:00'
+              })
+              .select()
+              .single();
+
+            if (createError) {
+              handleError('Vardiya kaydı oluşturulamadı.');
+              return;
+            }
+            shift = newShift;
+          }
+
+          if (isOnline) {
+            const { error: insertError } = await supabase
+              .from('attendance_records')
+              .insert({
+                shift_id: shift.id,
+                worker_id: profile?.id,
+                project_id: project.id,
+                check_in_time: new Date().toISOString(),
+                check_in_latitude: locationResult.latitude,
+                check_in_longitude: locationResult.longitude,
+                check_in_qr_verified: true,
+                check_in_location_verified: locationResult.verified,
+                is_synced: true,
+              });
+
+            if (insertError) {
+              if (insertError.code === '23505') {
+                handleError('Zaten aktif bir giriş kaydınız var.');
+              } else {
+                throw insertError;
+              }
+              return;
+            }
+
+            await supabase
+              .from('profiles')
+              .update({ last_qr_scan_at: new Date().toISOString() })
+              .eq('id', profile?.id);
+          } else {
+            handleError('Çevrimdışı modda yeni giriş desteklenmemektedir.');
+            return;
+          }
+
+          setSuccessMessage(isOnline ? 'Giriş Başarılı' : 'Giriş Kaydedildi (Çevrimdışı)');
+          setScanType(null);
+          setScanning(false);
+          setProcessing(false);
+          setSuccess(true);
         }
-
-        setSuccessMessage(isOnline ? 'Giriş Başarılı' : 'Giriş Kaydedildi (Çevrimdışı)');
-        setSuccess(true);
       }
+
     } catch (error) {
       console.error('Error processing QR:', error);
-      Alert.alert('Hata', 'İşlem sırasında bir hata oluştu');
-      setScanType(null);
-      setScanning(false);
-    } finally {
-      setProcessing(false);
+      if (Platform.OS === 'web') {
+        alert('Hata: İşlem sırasında bir hata oluştu: ' + (error as any).message);
+        setScanType(null);
+        setScanning(false);
+        setProcessing(false);
+      } else {
+        Alert.alert('Hata', 'İşlem sırasında bir hata oluştu: ' + (error as any).message, [
+          { text: 'Tamam', onPress: () => { setScanType(null); setScanning(false); setProcessing(false); } }
+        ]);
+      }
     }
   };
 
@@ -346,13 +421,20 @@ export default function QRScanner() {
           }}
         >
           <View style={styles.overlay}>
-            <View style={styles.scanArea} />
+            {processing ? (
+              <View style={[styles.scanArea, { borderColor: COLORS.primary, backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'center', alignItems: 'center' }]}>
+                <RefreshCw size={40} color="white" style={{ marginBottom: 10 }} />
+                <Text style={{ color: 'white', fontWeight: 'bold' }}>İşleniyor...</Text>
+              </View>
+            ) : (
+              <View style={styles.scanArea} />
+            )}
             <Text style={styles.scanText}>
-              {scanType === 'in' ? 'Giriş' : 'Çıkış'} Kodu Okunuyor...
+              {processing ? 'Bilgiler Doğrulanıyor...' : (scanType === 'in' ? 'Giriş' : 'Çıkış') + ' Kodu Okunuyor...'}
             </Text>
           </View>
         </CameraView>
-        <TouchableOpacity style={styles.cancelBtn} onPress={handleBack}>
+        <TouchableOpacity style={styles.cancelBtn} onPress={handleBack} disabled={processing}>
           <Text style={styles.cancelBtnText}>İptal</Text>
         </TouchableOpacity>
       </View>

@@ -65,6 +65,19 @@ export default function CreateUnitInvoiceScreen() {
 
     setLoading(true);
     try {
+      // Check if invoice already exists for this work order
+      const { data: existingInvoice } = await supabase
+        .from('unit_invoices')
+        .select('id')
+        .eq('work_order_id', selectedWorkOrder)
+        .maybeSingle();
+
+      if (existingInvoice) {
+        Alert.alert('Hata', 'Bu iş emri için zaten bir hakediş oluşturulmuş!');
+        setLoading(false);
+        return;
+      }
+
       const invoiceNumber = generateInvoiceNumber();
 
       const { data: invoice, error: invoiceError } = await supabase
@@ -93,14 +106,14 @@ export default function CreateUnitInvoiceScreen() {
 
       if (updateError) throw updateError;
 
-      Alert.alert('Başarılı', 'Hakediş oluşturuldu', [
+      Alert.alert('Başarılı', 'Hakediş başarıyla oluşturuldu ve iş emri tamamlandı.', [
         { text: 'Tamam', onPress: () => router.back() }
       ]);
     } catch (error: any) {
       console.error('Hakediş oluşturma hatası:', error);
       Alert.alert('Hata', error.message);
     } finally {
-      setLoading(false);
+      if (loading) setLoading(false);
     }
   };
 

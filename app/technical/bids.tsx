@@ -50,6 +50,7 @@ export default function BidsPage() {
   const [bids, setBids] = useState<Bid[]>([]);
   const [requestTitle, setRequestTitle] = useState('');
   const [requestStatus, setRequestStatus] = useState('');
+  const [commissionRate, setCommissionRate] = useState(0);
   const [autoSelectedBids, setAutoSelectedBids] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
   const [isUserProjectManager, setIsUserProjectManager] = useState(false);
@@ -100,7 +101,7 @@ export default function BidsPage() {
           .order('bid_amount', { ascending: true, nullsFirst: false }),
         supabase
           .from('technical_service_requests')
-          .select('title, status, project_id')
+          .select('title, status, project_id, companies(commission_rate)')
           .eq('id', requestId)
           .single(),
       ]);
@@ -113,6 +114,8 @@ export default function BidsPage() {
       if (requestRes.data) {
         setRequestTitle(requestRes.data.title);
         setRequestStatus(requestRes.data.status);
+        // @ts-ignore
+        setCommissionRate(requestRes.data.companies?.commission_rate || 0);
 
         if (requestRes.data.project_id) {
           const { data: pmData } = await supabase
@@ -205,7 +208,7 @@ export default function BidsPage() {
       const { error: requestError } = await supabase
         .from('technical_service_requests')
         .update({
-          status: 'in_progress',
+          status: 'approved',
           updated_at: new Date().toISOString(),
         })
         .eq('id', requestId);
@@ -248,8 +251,16 @@ export default function BidsPage() {
     }
   };
 
-  const isReadOnly = requestStatus === 'awaiting_customer_decision';
-  const showOnlySelected = isReadOnly || isUserProjectManager;
+  /* 
+     Read-only conditions:
+     - Project Manager: Always read-only (can't select/approve)
+     - Operations/Admin: Read-only if status is finalizing (approved, completed, etc)
+     - Others: Read-only
+  */
+  const requestFinished = ['approved', 'rejected', 'in_progress', 'completed', 'cancelled'].includes(requestStatus);
+  const isReadOnly = isUserProjectManager || requestFinished;
+
+  const showOnlySelected = isUserProjectManager && requestStatus === 'awaiting_customer_decision';
 
   const displayBids = showOnlySelected
     ? bids.filter(b => b.selected_for_customer)
@@ -274,7 +285,7 @@ export default function BidsPage() {
       ) : (
         <>
           <ScrollView style={styles.content}>
-            {isReadOnly && !canApproveBids && (
+            {isUserProjectManager && requestStatus === 'awaiting_customer_decision' && (
               <View style={styles.infoCard}>
                 <CheckCircle size={20} color="#8b5cf6" />
                 <View style={styles.infoCardContent}>
@@ -294,31 +305,12 @@ export default function BidsPage() {
                   {isReadOnly ? 'Henüz seçilmiş teklif yok' : 'Henüz teklif yok'}
                 </Text>
                 <Text style={styles.emptySubtext}>
-                  {isReadOnly
-                    ? 'Teklif süreci sonlandırıldığında en uygun seçenekler burada görünecektir'
-                    : 'Teknisyen firmalar teklif verdiğinde burada görünecektir'}
+                  {'Teklif süreci devam ediyor veya tamamlandı.'}
                 </Text>
               </View>
             ) : (
               <>
-                {!isReadOnly && !isUserProjectManager && autoSelectedBids.size > 0 && (
-                  <View style={styles.autoSelectBox}>
-                    <View style={styles.autoSelectHeader}>
-                      <CheckCircle size={20} color={COLORS.primary} />
-                      <Text style={styles.autoSelectTitle}>
-                        Otomatik Seçim: {autoSelectedBids.size} Teklif
-                      </Text>
-                    </View>
-                    <Text style={styles.autoSelectText}>
-                      Aşağıdaki kriterlerle otomatik seçim yapılacak:
-                    </Text>
-                    <View style={styles.criteriaList}>
-                      <Text style={styles.criteriaItem}>• En düşük fiyat teklifi</Text>
-                      <Text style={styles.criteriaItem}>• En düşük tanı servisi teklifi</Text>
-                      <Text style={styles.criteriaItem}>• Tüm bilgi talepleri</Text>
-                    </View>
-                  </View>
-                )}
+                {/* Auto select box removed/hidden as selection is manual now */}
 
                 {displayBids.map((bid) => {
                   const isAutoSelected = autoSelectedBids.has(bid.id);
@@ -373,7 +365,7 @@ export default function BidsPage() {
                           {isAutoSelected && !isReadOnly && !isUserProjectManager && (
                             <View style={styles.selectedBadge}>
                               <CheckCircle size={16} color="white" />
-                              <Text style={styles.selectedBadgeText}>Seçildi</Text>
+                              <Text style={styles.selectedBadgeText}>Önerilen</Text>
                             </View>
                           )}
                           <View style={[styles.statusBadge, { backgroundColor: statusColor.bg }]}>
@@ -398,7 +390,14 @@ export default function BidsPage() {
                           <View style={styles.bidRow}>
                             <DollarSign size={18} color={COLORS.textLight} />
                             <Text style={styles.bidLabel}>Teklif Tutarı:</Text>
-                            <Text style={styles.bidValue}>₺{bid.bid_amount.toLocaleString('tr-TR')}</Text>
+                            <Text style={styles.bidValue}>
+                              {new Intl.NumberFormat('tr-TR', {
+                                style: 'currency',
+                                currency: 'TRY',
+                                minimumFractionDigits: 0,
+                                maximumFractionDigits: 2,
+                              }).format(bid.bid_amount * (1 + commissionRate))}
+                            </Text>
                           </View>
                         )}
 
@@ -425,7 +424,8 @@ export default function BidsPage() {
                         {new Date(bid.created_at).toLocaleString('tr-TR')}
                       </Text>
 
-                      {isReadOnly && canApproveBids && bid.status === 'pending' && requestStatus !== 'awaiting_customer_decision' && (
+                      {/* Operations/Admin can accept bid if status is bidding or awaiting_customer_decision */}
+                      {canApproveBids && bid.status === 'pending' && !requestFinished && (
                         <TouchableOpacity
                           style={styles.acceptBtn}
                           onPress={() => handleAcceptBid(bid.id)}
@@ -436,7 +436,7 @@ export default function BidsPage() {
                           ) : (
                             <>
                               <CheckCircle size={18} color="white" />
-                              <Text style={styles.acceptBtnText}>Bu Teklifi Kabul Et</Text>
+                              <Text style={styles.acceptBtnText}>Bu Teklifi Onayla</Text>
                             </>
                           )}
                         </TouchableOpacity>
@@ -447,27 +447,6 @@ export default function BidsPage() {
               </>
             )}
           </ScrollView>
-
-          {!isReadOnly && !isUserProjectManager && !canApproveBids && bids.length > 0 && autoSelectedBids.size > 0 && (
-            <View style={styles.actionBar}>
-              <TouchableOpacity
-                style={styles.submitBtn}
-                onPress={handleSubmitToCustomer}
-                disabled={submitting}
-              >
-                {submitting ? (
-                  <ActivityIndicator color="white" />
-                ) : (
-                  <>
-                    <Send size={20} color="white" />
-                    <Text style={styles.submitBtnText}>
-                      Müşteriye İlet ({autoSelectedBids.size} Teklif)
-                    </Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            </View>
-          )}
         </>
       )}
     </SafeAreaView>

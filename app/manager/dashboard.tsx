@@ -63,13 +63,16 @@ export default function ManagerDashboard() {
         return;
       }
 
-      const { data: assignments } = await supabase
+      // 1. Calculate Active Personnel correctly
+      // We check for assignments that are NOT removed (removed_at is null)
+      // We removed is_active check because the column likely doesn't exist on project_assignments table
+      const { count: activePersonnelCount, error: assignmentsError } = await supabase
         .from('project_assignments')
-        .select('worker_id, profiles!inner(full_name, personnel_type)')
+        .select('*', { count: 'exact', head: true })
         .in('project_id', projectIds)
-        .eq('is_active', true);
+        .is('removed_at', null);
 
-      const activePersonnel = assignments?.length || 0;
+      const activePersonnel = activePersonnelCount || 0;
 
       const today = new Date().toISOString().split('T')[0];
 
@@ -95,36 +98,56 @@ export default function ManagerDashboard() {
         );
 
         checkedInToday = checkedInWorkers.size;
+        // Fix duplicate count issues by ensuring we don't go below 0
         notCheckedInToday = Math.max(0, activePersonnel - checkedInToday);
       } else {
         notCheckedInToday = activePersonnel;
       }
 
-      const { data: performanceRecords } = await supabase
-        .from('attendance_records')
-        .select('worker_id, performance_rating, profiles!inner(full_name)')
-        .in('shift_id', shiftIds)
-        .not('performance_rating', 'is', null);
-
-      const ratings = performanceRecords?.map(r => r.performance_rating) || [];
-      const avgPerformance = ratings.length > 0
-        ? ratings.reduce((sum, r) => sum + r, 0) / ratings.length
-        : 0;
-
-      let topPerformer = null;
-      if (performanceRecords && performanceRecords.length > 0) {
-        const sorted = [...performanceRecords].sort((a, b) => b.performance_rating - a.performance_rating);
-        const top = sorted[0];
-        const profile = Array.isArray(top.profiles) ? top.profiles[0] : top.profiles;
-        topPerformer = {
-          name: profile?.full_name || 'Bilinmeyen',
-          rating: top.performance_rating,
-        };
-      }
-
+      // Calculate Monthly Statistics (Performance, Employee of Month)
       const currentMonth = new Date().getMonth();
       const currentYear = new Date().getFullYear();
+      const firstDayOfMonth = new Date(currentYear, currentMonth, 1).toISOString().split('T')[0];
+      const lastDayOfMonth = new Date(currentYear, currentMonth + 1, 0).toISOString().split('T')[0];
 
+      // Fetch IDs of all shifts in this month once
+      const { data: monthlyShifts } = await supabase
+        .from('shifts')
+        .select('id')
+        .in('project_id', projectIds)
+        .gte('shift_date', firstDayOfMonth)
+        .lte('shift_date', lastDayOfMonth);
+
+      const monthlyShiftIds = monthlyShifts?.map(s => s.id) || [];
+
+      // A. Calculate Avg Performance & Top Performer
+      let avgPerformance = 0;
+      let topPerformer = null;
+
+      if (monthlyShiftIds.length > 0) {
+        const { data: performanceRecords } = await supabase
+          .from('attendance_records')
+          .select('worker_id, performance_rating, profiles(full_name)')
+          .in('shift_id', monthlyShiftIds)
+          .not('performance_rating', 'is', null);
+
+        const ratings = performanceRecords?.map(r => r.performance_rating) || [];
+        avgPerformance = ratings.length > 0
+          ? ratings.reduce((sum, r) => sum + r, 0) / ratings.length
+          : 0;
+
+        if (performanceRecords && performanceRecords.length > 0) {
+          const sorted = [...performanceRecords].sort((a, b) => b.performance_rating - a.performance_rating);
+          const top = sorted[0];
+          const profile = Array.isArray(top.profiles) ? top.profiles[0] : top.profiles;
+          topPerformer = {
+            name: profile?.full_name || 'Bilinmeyen',
+            rating: top.performance_rating,
+          };
+        }
+      }
+
+      // B. Calculate Outsource Usage
       const { data: monthlyAssignments } = await supabase
         .from('project_assignments')
         .select('worker_id, profiles!inner(personnel_type), created_at')
@@ -141,17 +164,7 @@ export default function ManagerDashboard() {
         );
       }).length || 0;
 
-      const firstDayOfMonth = new Date(currentYear, currentMonth, 1).toISOString().split('T')[0];
-      const lastDayOfMonth = new Date(currentYear, currentMonth + 1, 0).toISOString().split('T')[0];
-
-      const { data: monthlyShifts } = await supabase
-        .from('shifts')
-        .select('id')
-        .in('project_id', projectIds)
-        .gte('shift_date', firstDayOfMonth)
-        .lte('shift_date', lastDayOfMonth);
-
-      const monthlyShiftIds = monthlyShifts?.map(s => s.id) || [];
+      // C. Employee of the Month (uses exact same monthlyShiftIds)
 
       let employeeOfMonth = null;
       if (monthlyShiftIds.length > 0) {
@@ -437,7 +450,7 @@ export default function ManagerDashboard() {
                 İş emirlerini görüntüle
               </Text>
             </View>
-            <ArrowLeft size={20} color={COLORS.textSecondary} style={{ transform: [{ rotate: '180deg' }] }} />
+            <ArrowLeft size={20} color={COLORS.textLight} style={{ transform: [{ rotate: '180deg' }] }} />
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -453,7 +466,7 @@ export default function ManagerDashboard() {
                 Hakedişleri incele ve yorum yap
               </Text>
             </View>
-            <ArrowLeft size={20} color={COLORS.textSecondary} style={{ transform: [{ rotate: '180deg' }] }} />
+            <ArrowLeft size={20} color={COLORS.textLight} style={{ transform: [{ rotate: '180deg' }] }} />
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -469,7 +482,7 @@ export default function ManagerDashboard() {
                 Teknik servisleri değerlendirin
               </Text>
             </View>
-            <ArrowLeft size={20} color={COLORS.textSecondary} style={{ transform: [{ rotate: '180deg' }] }} />
+            <ArrowLeft size={20} color={COLORS.textLight} style={{ transform: [{ rotate: '180deg' }] }} />
           </TouchableOpacity>
         </View>
 

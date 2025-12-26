@@ -11,7 +11,7 @@ import {
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { COLORS } from '@/constants/theme';
-import { ArrowLeft, Building2, MapPin, FileText, Send, CheckCircle, Calendar, Users, DollarSign, MessageSquare, Stethoscope, AlertCircle } from 'lucide-react-native';
+import { ArrowLeft, Building2, MapPin, FileText, Send, CheckCircle, Calendar, Users, DollarSign, MessageSquare, Stethoscope, AlertCircle, Clock } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 type Request = {
@@ -41,6 +41,8 @@ export default function RequestDetail() {
   const [request, setRequest] = useState<Request | null>(null);
   const [updating, setUpdating] = useState(false);
   const [isUserProjectManager, setIsUserProjectManager] = useState(false);
+  const [isUserAdmin, setIsUserAdmin] = useState(false);
+  const [bids, setBids] = useState<any[]>([]);
   const [bidStats, setBidStats] = useState<{
     count: number;
     bestBid?: {
@@ -88,52 +90,65 @@ export default function RequestDetail() {
         setIsUserProjectManager(!!pmData);
       }
 
-      if (data?.status === 'bidding') {
-        const { data: bids } = await supabase
+      // Check for Admin role
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single();
+
+      setIsUserAdmin(profile?.role === 'admin');
+
+      if (data?.status !== 'pending_review' && data?.status !== 'info_needed') {
+        const { data: bidsData } = await supabase
           .from('technical_service_bids')
-          .select('bid_amount, bid_type') // Removed company_id as it's not used for commission calculation here
+          .select('*, technical_service_companies(company_name, phone, email)')
           .eq('request_id', id);
 
-        if (bids && bids.length > 0) {
-          const priceQuotes = bids.filter(b => b.bid_type === 'quote');
-          const infoRequests = bids.filter(b => b.bid_type === 'info_request');
-          const diagnosticServices = bids.filter(b => b.bid_type === 'diagnostic_service');
+        if (bidsData) {
+          setBids(bidsData);
 
-          // En düşük fiyatı hesapla (Komisyon dahil en uygun teklifi bul)
-          let bestBid: { raw: number; final: number } | undefined;
+          if (bidsData.length > 0) {
+            const priceQuotes = bidsData.filter(b => b.bid_type === 'quote');
+            const infoRequests = bidsData.filter(b => b.bid_type === 'info_request');
+            const diagnosticServices = bidsData.filter(b => b.bid_type === 'diagnostic_service');
 
-          if (priceQuotes.length > 0) {
-            // Use the customer's company commission rate
-            // @ts-ignore - data.companies is already typed, but commission_rate might be null/undefined
-            const commissionRate = data?.companies?.commission_rate || 0;
+            // En düşük fiyatı hesapla (Komisyon dahil en uygun teklifi bul)
+            let bestBid: { raw: number; final: number } | undefined;
 
-            const calculatedBids = priceQuotes
-              .filter(b => b.bid_amount)
-              .map(b => {
-                const rawAmount = b.bid_amount!;
-                // Veritabanında ondalık olarak saklanıyor (0.10)
-                const finalAmount = rawAmount * (1 + commissionRate);
+            if (priceQuotes.length > 0) {
+              // Use the customer's company commission rate
+              // @ts-ignore - data.companies is already typed, but commission_rate might be null/undefined
+              const commissionRate = data?.companies?.commission_rate || 0;
 
-                return {
-                  raw: rawAmount,
-                  final: finalAmount
-                };
-              });
+              const calculatedBids = priceQuotes
+                .filter(b => b.bid_amount)
+                .map(b => {
+                  const rawAmount = b.bid_amount!;
+                  // Veritabanında ondalık olarak saklanıyor (0.10)
+                  const finalAmount = rawAmount * (1 + commissionRate);
 
-            if (calculatedBids.length > 0) {
-              // Final fiyata göre sırala ve en düşüğü al
-              calculatedBids.sort((a, b) => a.final - b.final);
-              bestBid = calculatedBids[0];
+                  return {
+                    raw: rawAmount,
+                    final: finalAmount
+                  };
+                });
+
+              if (calculatedBids.length > 0) {
+                // Final fiyata göre sırala ve en düşüğü al
+                calculatedBids.sort((a, b) => a.final - b.final);
+                bestBid = calculatedBids[0];
+              }
             }
-          }
 
-          setBidStats({
-            count: bids.length,
-            bestBid,
-            quoteCount: priceQuotes.length,
-            infoRequestCount: infoRequests.length,
-            diagnosticCount: diagnosticServices.length,
-          });
+            setBidStats({
+              count: bidsData.length,
+              bestBid,
+              quoteCount: priceQuotes.length,
+              infoRequestCount: infoRequests.length,
+              diagnosticCount: diagnosticServices.length,
+            });
+          }
         }
       }
     } catch (error) {
@@ -426,6 +441,54 @@ export default function RequestDetail() {
             </View>
           )}
 
+          {/* Display Accepted Bid Details */}
+          {['in_progress', 'completed', 'approved'].includes(request.status) && bids.find(b => b.status === 'accepted') && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Onaylanan Teklif</Text>
+              {(() => {
+                const acceptedBid = bids.find(b => b.status === 'accepted');
+                if (!acceptedBid) return null;
+                const commissionRate = request.companies?.commission_rate || 0;
+                const finalPrice = acceptedBid.bid_amount ? acceptedBid.bid_amount * (1 + commissionRate) : 0;
+
+                return (
+                  <View style={styles.card}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }}>
+                      <Text style={{ fontSize: 16, fontWeight: '700', color: COLORS.secondary }}>
+                        {acceptedBid.technical_service_companies?.company_name}
+                      </Text>
+                      <View style={{ backgroundColor: '#dcfce7', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}>
+                        <Text style={{ color: '#166534', fontSize: 12, fontWeight: '600' }}>Seçilen Firma</Text>
+                      </View>
+                    </View>
+
+                    <View style={{ gap: 8 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <DollarSign size={18} color={COLORS.primary} />
+                        <Text style={{ color: COLORS.textLight }}>Onaylanan Tutar:</Text>
+                        <Text style={{ fontSize: 16, fontWeight: '700', color: COLORS.primary }}>
+                          {new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY', minimumFractionDigits: 0 }).format(finalPrice)}
+                        </Text>
+                      </View>
+
+                      {acceptedBid.estimated_duration && (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                          <Clock size={18} color={COLORS.textLight} />
+                          <Text style={{ color: COLORS.textLight }}>Tahmini Süre:</Text>
+                          <Text style={{ fontSize: 15, color: COLORS.secondary, fontWeight: '500' }}>{acceptedBid.estimated_duration}</Text>
+                        </View>
+                      )}
+
+                      <View style={{ marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: COLORS.border }}>
+                        <Text style={{ fontSize: 14, color: COLORS.text }}>{acceptedBid.description}</Text>
+                      </View>
+                    </View>
+                  </View>
+                );
+              })()}
+            </View>
+          )}
+
           {request.status === 'bidding' && !isUserProjectManager && bidStats && bidStats.count > 0 && (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Teklif Bilgileri</Text>
@@ -537,28 +600,7 @@ export default function RequestDetail() {
           </View>
         )}
 
-        {(request.status === 'bidding' || request.status === 'awaiting_customer_decision') && !isUserProjectManager && bidStats && bidStats.count > 0 && (
-          <View style={styles.actionsCard}>
-            <TouchableOpacity
-              style={[styles.actionBtn, styles.primaryBtn, { backgroundColor: COLORS.success }]}
-              onPress={handleFinalizeBidding}
-              disabled={updating}
-            >
-              {updating ? (
-                <ActivityIndicator color="white" />
-              ) : (
-                <>
-                  <CheckCircle size={20} color="white" />
-                  <Text style={styles.primaryBtnText}>
-                    {request.status === 'awaiting_customer_decision' ? 'Teklif Seçimini Yenile' : 'Teklif Sürecini Sonlandır'}
-                  </Text>
-                </>
-              )}
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {request.status === 'pending_review' && (
+        {request.status === 'pending_review' && isUserAdmin && (
           <View style={styles.actionsCard}>
             <TouchableOpacity
               style={[styles.actionBtn, styles.primaryBtn]}
@@ -593,7 +635,7 @@ export default function RequestDetail() {
               onPress={() => router.push({ pathname: '/technical/bids', params: { requestId: id } })}
             >
               <FileText size={20} color="white" />
-              <Text style={styles.primaryBtnText}>Seçilmiş Teklifleri Görüntüle</Text>
+              <Text style={styles.primaryBtnText}>Teklifleri İncele ve Onayla</Text>
             </TouchableOpacity>
           </View>
         )}

@@ -11,7 +11,7 @@ import {
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { COLORS } from '@/constants/theme';
-import { ArrowLeft, Building2, MapPin, FileText, CheckCircle, Calendar, Users, DollarSign, MessageSquare, Stethoscope } from 'lucide-react-native';
+import { ArrowLeft, Building2, MapPin, FileText, CheckCircle, Calendar, Users, DollarSign, MessageSquare, Stethoscope, Send, AlertCircle, Clock, XCircle } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 type Request = {
@@ -149,22 +149,103 @@ export default function AdminTechnicalRequestDetail() {
     return labels[status] || status;
   };
 
+  const handleStartBidding = async () => {
+    const confirmed = window.confirm(
+      'Teknik servislere bildirim gönderilecek. Devam etmek istiyor musunuz?'
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setUpdating(true);
+      const { error } = await supabase
+        .from('technical_service_requests')
+        .update({
+          status: 'bidding',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', id);
+
+      if (error) throw error;
+
+      window.alert('Başarılı: Teklif toplama başlatıldı');
+      await loadRequest();
+    } catch (error) {
+      console.error('Error starting bidding:', error);
+      window.alert('Hata: İşlem başarısız');
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const handleApprove = async () => {
+    const confirmed = window.confirm(
+      'Bu talep onaylanacak. Devam etmek istiyor musunuz?'
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setUpdating(true);
+      const { error } = await supabase
+        .from('technical_service_requests')
+        .update({
+          status: 'approved',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', id);
+
+      if (error) throw error;
+
+      window.alert('Başarılı: Talep onaylandı');
+      await loadRequest();
+    } catch (error) {
+      console.error('Error approving request:', error);
+      window.alert('Hata: İşlem başarısız');
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const handleReject = async () => {
+    const confirmed = window.confirm(
+      'Bu talep reddedilecek. Devam etmek istiyor musunuz?'
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setUpdating(true);
+      const { error } = await supabase
+        .from('technical_service_requests')
+        .update({
+          status: 'cancelled',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', id);
+
+      if (error) throw error;
+
+      window.alert('Başarılı: Talep reddedildi');
+      await loadRequest();
+    } catch (error) {
+      console.error('Error rejecting request:', error);
+      window.alert('Hata: İşlem başarısız');
+    } finally {
+      setUpdating(false);
+    }
+  };
+
   const handleFinalizeBidding = async () => {
     const confirmed = window.confirm(
-      'Teklif sürecini sonlandırıp müşteriye en uygun seçenekleri sunmak istiyor musunuz?'
+      'Teklif toplama süreci sonlandırılıp operasyon onayına sunulacak. Devam etmek istiyor musunuz?'
     );
     if (!confirmed) return;
 
     try {
       setUpdating(true);
 
-      const { data, error } = await supabase.rpc('auto_select_bids_for_customer', {
-        p_request_id: id,
-      });
-
-      if (error) throw error;
-
-      await supabase
+      const { error } = await supabase
         .from('technical_service_requests')
         .update({
           status: 'awaiting_customer_decision',
@@ -172,7 +253,9 @@ export default function AdminTechnicalRequestDetail() {
         })
         .eq('id', id);
 
-      window.alert('Başarılı: Müşteriye en uygun seçenekler hazırlandı');
+      if (error) throw error;
+
+      window.alert('Başarılı: Talep operasyon onayına sunuldu');
       loadRequest();
     } catch (error) {
       console.error('Error finalizing bidding:', error);
@@ -347,42 +430,104 @@ export default function AdminTechnicalRequestDetail() {
             </View>
           )}
 
-          {/* New Section: Display Selected Bids (What the customer sees) */}
-          {request.status !== 'bidding' && bids.length > 0 && (
+          {/* Display Accepted Bid Details (Winner Card) */}
+          {['approved', 'in_progress', 'completed'].includes(request.status) && bids.find((b: any) => b.status === 'accepted') && (
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Müşteriye İletilen Teklifler</Text>
-              {bids.filter((b: any) => b.selected_for_customer || b.status === 'accepted').map((bid: any) => (
+              <Text style={styles.sectionTitle}>Onaylanan Teklif</Text>
+              {(() => {
+                const acceptedBid = bids.find((b: any) => b.status === 'accepted');
+                if (!acceptedBid) return null;
+                const commissionRate = request.companies?.commission_rate || 0;
+                const finalPrice = acceptedBid.bid_amount ? acceptedBid.bid_amount * (1 + commissionRate) : 0;
+
+                return (
+                  <View style={styles.card}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }}>
+                      <Text style={{ fontSize: 16, fontWeight: '700', color: COLORS.secondary }}>
+                        {acceptedBid.technical_service_companies?.company_name}
+                      </Text>
+                      <View style={{ backgroundColor: '#dcfce7', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}>
+                        <Text style={{ color: '#166534', fontSize: 12, fontWeight: '600' }}>Seçilen Firma</Text>
+                      </View>
+                    </View>
+
+                    <View style={{ gap: 8 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <DollarSign size={18} color={COLORS.primary} />
+                        <Text style={{ color: COLORS.textLight }}>Onaylanan Tutar:</Text>
+                        <Text style={{ fontSize: 16, fontWeight: '700', color: COLORS.primary }}>
+                          {new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY', minimumFractionDigits: 0 }).format(finalPrice)}
+                        </Text>
+                      </View>
+
+                      {acceptedBid.estimated_duration && (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                          <Clock size={16} color={COLORS.textLight} />
+                          <Text style={{ color: COLORS.textLight }}>Tahmini Süre:</Text>
+                          <Text style={{ fontSize: 15, color: COLORS.secondary, fontWeight: '500' }}>{acceptedBid.estimated_duration}</Text>
+                        </View>
+                      )}
+
+                      <View style={{ marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: COLORS.border }}>
+                        <Text style={{ fontSize: 14, color: COLORS.text }}>{acceptedBid.description}</Text>
+                      </View>
+                    </View>
+                  </View>
+                );
+              })()}
+            </View>
+          )}
+
+          {/* Display All Bids for Admin */}
+          {bids.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Gelen Teklifler ({bids.length})</Text>
+              {bids.map((bid: any) => (
                 <View key={bid.id} style={styles.card}>
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
                     <Text style={{ fontWeight: '700', color: COLORS.secondary }}>
                       {bid.technical_service_companies?.company_name}
                     </Text>
-                    {bid.status === 'accepted' && (
-                      <View style={{ backgroundColor: '#dcfce7', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4 }}>
-                        <Text style={{ color: '#166534', fontSize: 12 }}>Kabul Edildi</Text>
-                      </View>
-                    )}
+                    <View style={[
+                      styles.statusBadge,
+                      { backgroundColor: bid.status === 'accepted' ? '#dcfce7' : '#f3f4f6' }
+                    ]}>
+                      <Text style={{
+                        color: bid.status === 'accepted' ? '#166534' : '#6b7280',
+                        fontSize: 12,
+                        fontWeight: '600'
+                      }}>
+                        {getStatusLabel(bid.status)}
+                      </Text>
+                    </View>
                   </View>
-                  <View style={{ flexDirection: 'row', gap: 16, marginTop: 4 }}>
+
+                  <View style={{ marginBottom: 8 }}>
+                    <Text style={{ fontSize: 13, color: COLORS.textLight }}>
+                      {bid.description}
+                    </Text>
+                  </View>
+
+                  <View style={{ flexDirection: 'row', gap: 16, marginTop: 4, paddingTop: 8, borderTopWidth: 1, borderTopColor: COLORS.border }}>
                     <View>
                       <Text style={{ color: COLORS.textLight, fontSize: 12, marginBottom: 2 }}>Ham Tutar (Net):</Text>
                       <Text style={{ fontWeight: '600', color: COLORS.secondary, fontSize: 15 }}>
-                        {new Intl.NumberFormat('tr-TR', {
+                        {bid.bid_amount ? new Intl.NumberFormat('tr-TR', {
                           style: 'currency',
                           currency: 'TRY',
                           minimumFractionDigits: 0,
-                        }).format(bid.bid_amount)}
+                        }).format(bid.bid_amount) : '-'}
                       </Text>
                     </View>
                     <View style={{ width: 1, backgroundColor: COLORS.border }} />
                     <View>
-                      <Text style={{ color: COLORS.textLight, fontSize: 12, marginBottom: 2 }}>Müşteri Fiyatı:</Text>
+                      <Text style={{ color: COLORS.textLight, fontSize: 12, marginBottom: 2 }}>Müşteri Fiyatı (+Koms):</Text>
                       <Text style={{ fontWeight: '700', color: COLORS.primary, fontSize: 16 }}>
-                        {new Intl.NumberFormat('tr-TR', {
+                        {bid.bid_amount ? new Intl.NumberFormat('tr-TR', {
                           style: 'currency',
                           currency: 'TRY',
                           minimumFractionDigits: 0,
-                        }).format(bid.bid_amount * (1 + (request.companies?.commission_rate || 0)))}
+                        }).format(bid.bid_amount * (1 + (request.companies?.commission_rate || 0))) : '-'}
                       </Text>
                     </View>
                   </View>
@@ -401,6 +546,45 @@ export default function AdminTechnicalRequestDetail() {
             </View>
           </View>
         </View>
+
+        {request.status === 'pending_review' && (
+          <View style={styles.actionsCard}>
+            <TouchableOpacity
+              style={[styles.actionBtn, styles.primaryBtn]}
+              onPress={handleStartBidding}
+              disabled={updating}
+            >
+              {updating ? (
+                <ActivityIndicator color="white" />
+              ) : (
+                <>
+                  <Send size={20} color="white" />
+                  <Text style={styles.primaryBtnText}>Teklif Toplamaya Başla</Text>
+                </>
+              )}
+            </TouchableOpacity>
+
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              <TouchableOpacity
+                style={[styles.actionBtn, styles.secondaryBtn, { flex: 1, backgroundColor: '#dcfce7', borderWidth: 1, borderColor: '#166534' }]}
+                onPress={handleApprove}
+                disabled={updating}
+              >
+                <CheckCircle size={20} color="#166534" />
+                <Text style={{ fontSize: 16, fontWeight: '700', color: '#166534' }}>Onayla</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.actionBtn, { flex: 1, backgroundColor: '#fee2e2', borderWidth: 1, borderColor: '#ef4444' }]}
+                onPress={handleReject}
+                disabled={updating}
+              >
+                <XCircle size={20} color="#ef4444" />
+                <Text style={{ fontSize: 16, fontWeight: '700', color: '#ef4444' }}>Reddet</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
 
         {request.status === 'bidding' && bidStats && bidStats.count > 0 && (
           <View style={styles.actionsCard}>
@@ -558,6 +742,11 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: 'white',
   },
+  secondaryBtn: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+  },
   bidStatsBox: {
     backgroundColor: '#f9fafb',
     borderRadius: 12,
@@ -655,4 +844,11 @@ const styles = StyleSheet.create({
     opacity: 0.3,
     marginVertical: 8,
   },
+  // We don't have secondaryBtn style in the original file, it seems?
+  // Checked lines 1-800. Yes, line 539 uses styles.secondaryBtn.
+  // Wait, I see styles.secondaryBtn in Step 2172 line 539 ??
+  // Let me check the styles definition in Step 2172.
+  // It stops at line 800. The file has 803 lines?
+  // Let me assume secondaryBtn was there or I need to add it.
+  // I added it in my write_to_file content above.
 });

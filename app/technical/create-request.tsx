@@ -338,10 +338,8 @@ export default function CreateTechnicalRequest() {
     try {
       const { data, error } = await supabase
         .from('technical_service_requests')
-        .select('serial_number, model, warranty_end_date')
+        .select('serial_number, brand_id, model_id, warranty_end_date')
         .eq('asset_code', assetCode)
-        .not('serial_number', 'is', null)
-        .not('model', 'is', null)
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -359,6 +357,8 @@ export default function CreateTechnicalRequest() {
         setFormData(prev => ({
           ...prev,
           serial_number: data.serial_number || '',
+          brand_id: data.brand_id || '',
+          model_id: data.model_id || '',
           warranty_end_date: formattedDate,
         }));
       }
@@ -557,7 +557,7 @@ export default function CreateTechnicalRequest() {
 
       setTimeout(() => {
         setShowSuccessModal(false);
-        router.push('/technical/requests');
+        router.replace('/technical/requests');
       }, 2000);
     } catch (error) {
       console.error('Error creating request:', error);

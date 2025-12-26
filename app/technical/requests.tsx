@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   ScrollView,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
@@ -83,6 +84,7 @@ export default function TechnicalRequests() {
   const [loading, setLoading] = useState(true);
   const [requests, setRequests] = useState<Request[]>([]);
   const [filter, setFilter] = useState<string>('all');
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     // Safety check: specific role redirection
@@ -108,7 +110,17 @@ export default function TechnicalRequests() {
 
   const loadRequests = async () => {
     try {
-      const { data } = await supabase
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+
+      // Get user profile for filtering
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role, company_id')
+        .eq('id', user.id)
+        .single();
+
+      let query = supabase
         .from('technical_service_requests')
         .select(`
           *,
@@ -116,6 +128,17 @@ export default function TechnicalRequests() {
           technical_service_types(name)
         `)
         .order('created_at', { ascending: false });
+
+      // If operations, filter by company_id
+      if (profile?.role === 'operations' && profile?.company_id) {
+        query = query.eq('company_id', profile.company_id);
+      }
+
+      setIsAdmin(profile?.role === 'admin');
+
+      const { data, error } = await query;
+
+      if (error) throw error;
 
       if (data) {
         const requestsWithBidInfo = await Promise.all(
@@ -220,7 +243,7 @@ export default function TechnicalRequests() {
                   style={styles.requestCard}
                   onPress={() =>
                     router.push({
-                      pathname: '/technical/request-detail',
+                      pathname: isAdmin ? '/admin/technical-request-detail' : '/technical/request-detail',
                       params: { id: request.id },
                     })
                   }

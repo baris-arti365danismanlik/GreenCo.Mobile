@@ -12,6 +12,7 @@ import { useRouter } from 'expo-router';
 import { ArrowLeft, Clock, CheckCircle, FileText, AlertCircle } from 'lucide-react-native';
 import { COLORS } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/contexts/AuthContext';
 
 type TimesheetPeriod = {
   id: string;
@@ -27,25 +28,34 @@ type TimesheetPeriod = {
 
 export default function OperationsTimesheetsScreen() {
   const router = useRouter();
+  const { profile } = useAuth();
   const [timesheets, setTimesheets] = useState<TimesheetPeriod[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'ready' | 'pending' | 'completed'>('ready');
 
   useEffect(() => {
     loadTimesheets();
-  }, []);
+  }, [profile]);
 
   const loadTimesheets = async () => {
     try {
       console.log('Puantaj yükleniyor...');
-      const { data, error } = await supabase
+
+      let query = supabase
         .from('timesheet_periods')
         .select(`
           *,
           projects_greenco!inner (
-            name
+            name,
+            company_id
           )
-        `)
+        `);
+
+      if (profile?.company_id) {
+        query = query.eq('projects_greenco.company_id', profile.company_id);
+      }
+
+      const { data, error } = await query
         .in('status', ['final_approved', 'invoice_pending', 'invoice_completed'])
         .order('created_at', { ascending: false });
 

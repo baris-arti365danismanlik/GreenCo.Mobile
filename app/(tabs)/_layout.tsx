@@ -27,6 +27,8 @@ export default function TabsLayout() {
   const isOperations = profile?.role === 'operations';
   const isAdmin = profile?.role === 'admin';
 
+  /* Reverted redirect */
+
   return (
     <Tabs
       screenOptions={{
@@ -39,7 +41,7 @@ export default function TabsLayout() {
           borderTopColor: '#e5e7eb',
           height: 65,
           paddingBottom: 8,
-          display: isAdmin ? 'none' : 'flex',
+          display: isAdmin || isOperations ? 'none' : 'flex',
         },
         tabBarLabelStyle: {
           fontSize: 11,

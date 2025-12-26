@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,8 @@ import {
   TouchableOpacity,
   Alert,
   ScrollView,
+  Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
@@ -28,6 +30,7 @@ type Project = {
   latitude: number;
   longitude: number;
   geofence_radius_meters: number;
+  company_id: string;
 };
 
 type Assignment = {
@@ -47,6 +50,8 @@ export default function HomeScreen() {
   const [locationPermission, setLocationPermission] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [processing, setProcessing] = useState(false);
+  const processingRef = useRef(false);
+  const [currentLocation, setCurrentLocation] = useState<Location.LocationObject | null>(null);
   const [scanType, setScanType] = useState<'in' | 'out' | null>(null);
   const [success, setSuccess] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
@@ -173,11 +178,70 @@ export default function HomeScreen() {
     }
   };
 
-  const handleQRCodeScanned = async ({ data }: { data: string }) => {
-    if (processing || !scanning) return;
+  const [locationStatus, setLocationStatus] = useState<'searching' | 'denied' | 'error'>('searching');
 
+  useEffect(() => {
+    let subscription: Location.LocationSubscription | null = null;
+
+    const startWatching = async () => {
+      if (scanning) {
+        setLocationStatus('searching');
+        try {
+          const { status } = await Location.requestForegroundPermissionsAsync();
+          if (status !== 'granted') {
+            setLocationStatus('denied');
+            return;
+          }
+
+          // Try to get quick location first
+          try {
+            const lastKnown = await Location.getLastKnownPositionAsync();
+            if (lastKnown) {
+              setCurrentLocation(lastKnown);
+            } else {
+              const current = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+              setCurrentLocation(current);
+            }
+          } catch (e) {
+            console.log('Quick location fetch failed', e);
+          }
+
+          // Start watching for high accuracy updates
+          subscription = await Location.watchPositionAsync(
+            {
+              accuracy: Location.Accuracy.High,
+              timeInterval: 1000,
+              distanceInterval: 5,
+            },
+            (location) => {
+              setCurrentLocation(location);
+            }
+          );
+        } catch (e) {
+          console.log('Watching location error', e);
+          setLocationStatus('error');
+        }
+      }
+    };
+
+    startWatching();
+
+    return () => {
+      if (subscription) {
+        try {
+          subscription.remove();
+        } catch (e) {
+          console.log('Error removing subscription:', e);
+        }
+      }
+    };
+  }, [scanning]);
+
+  const handleQRCodeScanned = async ({ data }: { data: string }) => {
+    if (processingRef.current || !scanning) return;
+
+    processingRef.current = true;
     setProcessing(true);
-    setScanning(false);
 
     try {
       const { data: project, error: projectError } = await supabase
@@ -188,54 +252,51 @@ export default function HomeScreen() {
         .maybeSingle();
 
       if (projectError || !project) {
-        Alert.alert('Hata', 'Geçersiz QR kodu');
-        setProcessing(false);
-        setScanType(null);
-        setScanning(false);
+        handleError('Geçersiz QR kodu. Bu kod sisteme kayıtlı değil veya pasif.');
         return;
       }
 
-      const today = new Date().toISOString().split('T')[0];
-      const { data: shift, error: shiftError } = await supabase
-        .from('shifts')
-        .select('*')
-        .eq('worker_id', profile?.id)
+      // 1. Önce personelin bu projeye atanıp atanmadığını kontrol et
+      const { data: assignment, error: assignmentError } = await supabase
+        .from('project_assignments')
+        .select('id')
         .eq('project_id', project.id)
-        .eq('shift_date', today)
-        .in('status', ['scheduled', 'in_progress'])
+        .or(`personnel_id.eq.${profile?.id},worker_id.eq.${profile?.id}`)
+        .is('removed_at', null)
         .maybeSingle();
 
-      if (shiftError || !shift) {
-        Alert.alert('Hata', 'Bugün bu projede vardiyınız bulunmuyor');
-        setProcessing(false);
-        setScanType(null);
-        setScanning(false);
+      if (!assignment) {
+        handleError('Bu projeye atanmış personel değilsiniz.');
         return;
       }
 
-      const locationResult = await verifyLocation(project);
-
-      if (!locationResult.verified) {
-        Alert.alert('Konum Doğrulama Hatası', locationResult.message);
-        setProcessing(false);
-        setScanType(null);
-        setScanning(false);
-        return;
-      }
-
-      const { data: existingAttendance } = await supabase
+      // 2. GLOBAL KONTROL: Kullanıcının HERHANGİ bir açık oturumu var mı?
+      const { data: activeAttendance } = await supabase
         .from('attendance_records')
         .select('*')
-        .eq('shift_id', shift.id)
+        .eq('worker_id', profile?.id)
+        .is('check_out_time', null)
         .maybeSingle();
 
-      if (existingAttendance) {
-        if (!existingAttendance.check_out_time) {
-          if (scanType === 'in') {
-            Alert.alert('Hata', 'Bu vardiya için zaten giriş yaptınız. Lütfen çıkış yapın.');
-            setProcessing(false);
-            setScanType(null);
-            setScanning(false);
+      if (activeAttendance) {
+        // --- AKTİF OTURUM VARSA ---
+
+        if (scanType === 'in') {
+          handleError('Zaten açık bir giriş kaydınız var. Lütfen önce çıkış yapın.');
+          return;
+        }
+
+        if (scanType === 'out') {
+          // Doğru projede mi çıkış yapıyor?
+          if (activeAttendance.project_id !== project.id) {
+            handleError('Başka bir projede aktif girişiniz var. O projeden çıkış yapmalısınız.');
+            return;
+          }
+
+          // Konum Doğrulama
+          const locationResult = await verifyLocation(project);
+          if (!locationResult.verified) {
+            handleError(`Konum Doğrulama Hatası: ${locationResult.message}`);
             return;
           }
 
@@ -249,7 +310,7 @@ export default function HomeScreen() {
                 check_out_qr_verified: true,
                 check_out_location_verified: locationResult.verified,
               })
-              .eq('id', existingAttendance.id);
+              .eq('id', activeAttendance.id);
 
             if (updateError) throw updateError;
 
@@ -257,12 +318,15 @@ export default function HomeScreen() {
               .from('profiles')
               .update({ last_qr_scan_at: new Date().toISOString() })
               .eq('id', profile?.id);
+
+            showSuccess('Başarılı', 'Çıkış işlemi tamamlandı.');
           } else {
+            // Offline logic
             await offlineStorage.savePendingAttendance({
               id: `offline_${Date.now()}`,
               user_id: profile?.id || '',
               project_id: project.id,
-              shift_id: shift.id,
+              shift_id: activeAttendance.shift_id,
               check_out_time: new Date().toISOString(),
               location_lat: locationResult.latitude || undefined,
               location_lon: locationResult.longitude || undefined,
@@ -270,70 +334,144 @@ export default function HomeScreen() {
               timestamp: new Date().toISOString(),
             });
             await loadPendingCount();
+            showSuccess('Kaydedildi', 'Çıkış kaydı çevrimdışı olarak saklandı.');
           }
-
-          setSuccessMessage(isOnline ? 'Çıkış Başarılı' : 'Çıkış Kaydedildi (Çevrimdışı)');
-          setSuccess(true);
-        } else {
-          Alert.alert('Bilgi', 'Bu vardiya için zaten çıkış yaptınız');
-          setScanType(null);
-          setScanning(false);
         }
+
       } else {
+        // --- AKTİF OTURUM YOKSA ---
+
         if (scanType === 'out') {
-          Alert.alert('Hata', 'Bu vardiya için henüz giriş yapmadınız. Lütfen önce giriş yapın.');
-          setProcessing(false);
-          setScanType(null);
-          setScanning(false);
+          handleError('Giriş kaydınız bulunamadı. Lütfen önce giriş yapın.');
           return;
         }
 
-        if (isOnline) {
-          const { error: insertError } = await supabase
-            .from('attendance_records')
-            .insert({
-              shift_id: shift.id,
-              worker_id: profile?.id,
-              project_id: project.id,
-              check_in_time: new Date().toISOString(),
-              check_in_latitude: locationResult.latitude,
-              check_in_longitude: locationResult.longitude,
-              check_in_qr_verified: true,
-              check_in_location_verified: locationResult.verified,
-              is_synced: true,
-            });
+        if (scanType === 'in') {
+          // Konum Doğrulama
+          const locationResult = await verifyLocation(project);
+          if (!locationResult.verified) {
+            handleError(`Konum Doğrulama Hatası: ${locationResult.message}`);
+            return;
+          }
 
-          if (insertError) throw insertError;
+          // Vardiya Bul veya Oluştur
+          const today = new Date().toISOString().split('T')[0];
+          let { data: shift, error: shiftError } = await supabase
+            .from('shifts')
+            .select('*')
+            .eq('worker_id', profile?.id)
+            .eq('project_id', project.id)
+            .eq('shift_date', today)
+            .in('status', ['scheduled', 'in_progress'])
+            .maybeSingle();
 
-          await supabase
-            .from('profiles')
-            .update({ last_qr_scan_at: new Date().toISOString() })
-            .eq('id', profile?.id);
-        } else {
-          await offlineStorage.savePendingAttendance({
-            id: `offline_${Date.now()}`,
-            user_id: profile?.id || '',
-            project_id: project.id,
-            shift_id: shift.id,
-            check_in_time: new Date().toISOString(),
-            location_lat: locationResult.latitude || undefined,
-            location_lon: locationResult.longitude || undefined,
-            is_synced: false,
-            timestamp: new Date().toISOString(),
-          });
-          await loadPendingCount();
+          if (!shift) {
+            const { data: newShift, error: createError } = await supabase
+              .from('shifts')
+              .insert({
+                worker_id: profile?.id,
+                project_id: project.id,
+                company_id: project.company_id,
+                shift_date: today,
+                status: 'in_progress',
+                start_time: '08:00',
+                end_time: '18:00'
+              })
+              .select()
+              .single();
+
+            if (createError) {
+              console.error('Vardiya oluşturulamadı:', createError);
+              handleError('Vardiya kaydı oluşturulamadı.');
+              return;
+            }
+            shift = newShift;
+          }
+
+          if (isOnline) {
+            const { error: insertError } = await supabase
+              .from('attendance_records')
+              .insert({
+                shift_id: shift.id,
+                worker_id: profile?.id,
+                project_id: project.id,
+                check_in_time: new Date().toISOString(),
+                check_in_latitude: locationResult.latitude,
+                check_in_longitude: locationResult.longitude,
+                check_in_qr_verified: true,
+                check_in_location_verified: locationResult.verified,
+                is_synced: true,
+              });
+
+            if (insertError) {
+              if (insertError.code === '23505') {
+                handleError('Zaten aktif bir giriş kaydınız var.');
+              } else {
+                throw insertError;
+              }
+              return;
+            }
+
+            await supabase
+              .from('profiles')
+              .update({ last_qr_scan_at: new Date().toISOString() })
+              .eq('id', profile?.id);
+
+            showSuccess('Başarılı', 'Giriş işlemi tamamlandı.');
+          } else {
+            handleError('Çevrimdışı modda yeni giriş desteklenmemektedir.');
+          }
         }
-
-        setSuccessMessage(isOnline ? 'Giriş Başarılı' : 'Giriş Kaydedildi (Çevrimdışı)');
-        setSuccess(true);
       }
-    } catch (error) {
-      console.error('Error processing QR:', error);
-      Alert.alert('Hata', 'İşlem sırasında bir hata oluştu');
-      setScanType(null);
-      setScanning(false);
-    } finally {
-      setProcessing(false);
+
+    } catch (error: any) {
+      console.error('QR İşlem Hatası:', error);
+      handleError('İşlem sırasında bir hata oluştu: ' + (error.message || error));
+    }
+  };
+
+  const closeScanner = () => {
+    processingRef.current = false;
+    setProcessing(false);
+    setScanType(null);
+    setScanning(false);
+    setSuccess(false);
+  };
+
+  const handleError = (message: string) => {
+    setScanning(false);
+    if (Platform.OS === 'web') {
+      if (confirm(`${message}\n\nTekrar denemek ister misiniz?`)) {
+        processingRef.current = false;
+        setProcessing(false);
+        setScanning(true);
+      } else {
+        closeScanner();
+      }
+    } else {
+      Alert.alert('Hata', message, [
+        { text: 'Vazgeç', style: 'cancel', onPress: closeScanner },
+        {
+          text: 'Tekrar Dene',
+          onPress: () => {
+            processingRef.current = false;
+            setProcessing(false);
+            setScanning(true);
+          }
+        }
+      ]);
+    }
+  };
+
+  const showSuccess = (title: string, message: string) => {
+    setScanning(false);
+    setSuccess(true);
+    setSuccessMessage(message);
+    if (Platform.OS === 'web') {
+      alert(`${title}\n${message}`);
+      closeScanner();
+    } else {
+      Alert.alert(title, message, [{ text: 'Tamam', onPress: closeScanner }]);
     }
   };
 
@@ -388,13 +526,46 @@ export default function HomeScreen() {
           }}
         >
           <View style={styles.overlay}>
-            <View style={styles.scanArea} />
+            {processing ? (
+              <View style={[styles.scanArea, { borderColor: COLORS.primary, backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'center', alignItems: 'center' }]}>
+                <RefreshCw size={40} color="white" style={{ marginBottom: 10 }} />
+                <Text style={{ color: 'white', fontWeight: 'bold' }}>İşleniyor...</Text>
+              </View>
+            ) : (
+              <View style={styles.scanArea} />
+            )}
             <Text style={styles.scanText}>
-              {scanType === 'in' ? 'Giriş' : 'Çıkış'} Kodu Okunuyor...
+              {processing ? 'Bilgiler Doğrulanıyor...' : (scanType === 'in' ? 'Giriş' : 'Çıkış') + ' Kodu Okunuyor...'}
             </Text>
+            {currentLocation ? (
+              <View style={{ marginTop: 20, backgroundColor: 'rgba(0,0,0,0.5)', padding: 10, borderRadius: 8, alignItems: 'center' }}>
+                <Text style={{ color: 'white', fontSize: 12, fontWeight: 'bold' }}>
+                  Anlık Konum: {currentLocation.coords.latitude.toFixed(6)}, {currentLocation.coords.longitude.toFixed(6)}
+                </Text>
+                <Text style={{ color: '#cbd5e1', fontSize: 11, marginTop: 2 }}>
+                  Doğruluk: ±{Math.round(currentLocation.coords.accuracy || 0)}m
+                </Text>
+              </View>
+            ) : (
+              <View style={{ marginTop: 20, backgroundColor: 'rgba(0,0,0,0.5)', padding: 10, borderRadius: 8, alignItems: 'center' }}>
+                {locationStatus === 'denied' ? (
+                  <>
+                    <Text style={{ color: '#ef4444', fontWeight: 'bold', marginBottom: 4 }}>Konum İzni Yok</Text>
+                    <Text style={{ color: 'white', fontSize: 10 }}>Tarayıcı ayarlarını kontrol edin</Text>
+                  </>
+                ) : locationStatus === 'error' ? (
+                  <Text style={{ color: '#ef4444', fontWeight: 'bold' }}>Konum Alınamadı</Text>
+                ) : (
+                  <>
+                    <ActivityIndicator size="small" color="white" style={{ marginBottom: 4 }} />
+                    <Text style={{ color: 'white', fontSize: 12 }}>Konum Aranıyor...</Text>
+                  </>
+                )}
+              </View>
+            )}
           </View>
         </CameraView>
-        <TouchableOpacity style={styles.cancelBtn} onPress={handleBack}>
+        <TouchableOpacity style={styles.cancelBtn} onPress={handleBack} disabled={processing}>
           <Text style={styles.cancelBtnText}>İptal</Text>
         </TouchableOpacity>
       </View>

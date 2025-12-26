@@ -306,205 +306,205 @@ export default function ProfileScreen() {
       </View>
       <ScrollView style={styles.container}>
         <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.avatarContainer}
-          onPress={handlePickImage}
-          disabled={uploading}
-        >
-          {profile?.avatar_url ? (
-            <View style={styles.avatarImageContainer}>
-              <Text style={styles.avatarText}>Fotoğraf Yüklendi</Text>
-            </View>
-          ) : (
-            <>
-              <User size={48} color="#059669" />
-              {profile?.role === 'personnel' && (
-                <View style={styles.cameraIconBadge}>
-                  <Camera size={16} color="white" />
-                </View>
-              )}
-            </>
+          <TouchableOpacity
+            style={styles.avatarContainer}
+            onPress={handlePickImage}
+            disabled={uploading}
+          >
+            {profile?.avatar_url ? (
+              <View style={styles.avatarImageContainer}>
+                <Text style={styles.avatarText}>Fotoğraf Yüklendi</Text>
+              </View>
+            ) : (
+              <>
+                <User size={48} color="#059669" />
+                {profile?.role === 'personnel' && (
+                  <View style={styles.cameraIconBadge}>
+                    <Camera size={16} color="white" />
+                  </View>
+                )}
+              </>
+            )}
+          </TouchableOpacity>
+          {profile?.role === 'personnel' && !profile?.avatar_url && (
+            <Text style={styles.avatarWarning}>Profil fotoğrafı zorunludur</Text>
           )}
-        </TouchableOpacity>
-        {profile?.role === 'personnel' && !profile?.avatar_url && (
-          <Text style={styles.avatarWarning}>Profil fotoğrafı zorunludur</Text>
-        )}
-        <Text style={styles.name}>{profile?.full_name}</Text>
-        <View
-          style={[
-            styles.roleBadge,
-            { backgroundColor: getRoleColor(profile?.role || '') + '20' },
-          ]}
-        >
-          <Shield size={16} color={getRoleColor(profile?.role || '')} />
-          <Text
+          <Text style={styles.name}>{profile?.full_name}</Text>
+          <View
             style={[
-              styles.roleText,
-              { color: getRoleColor(profile?.role || '') },
+              styles.roleBadge,
+              { backgroundColor: getRoleColor(profile?.role || '') + '20' },
             ]}
           >
-            {getRoleText(profile?.role || '')}
+            <Shield size={16} color={getRoleColor(profile?.role || '')} />
+            <Text
+              style={[
+                styles.roleText,
+                { color: getRoleColor(profile?.role || '') },
+              ]}
+            >
+              {getRoleText(profile?.role || '')}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Hesap Bilgileri</Text>
+
+          <View style={styles.infoCard}>
+            <View style={styles.infoRow}>
+              <View style={styles.infoIcon}>
+                <Mail size={20} color="#6b7280" />
+              </View>
+              <View style={styles.infoContent}>
+                <Text style={styles.infoLabel}>E-posta</Text>
+                <Text style={styles.infoValue}>{user?.email}</Text>
+              </View>
+            </View>
+
+            <View style={styles.divider} />
+
+            <View style={styles.infoRow}>
+              <View style={styles.infoIcon}>
+                <Phone size={20} color="#6b7280" />
+              </View>
+              <View style={styles.infoContent}>
+                <Text style={styles.infoLabel}>Telefon</Text>
+                <Text style={styles.infoValue}>
+                  {profile?.phone || 'Belirtilmemiş'}
+                </Text>
+              </View>
+            </View>
+
+            {profile?.company_id && (
+              <>
+                <View style={styles.divider} />
+                <View style={styles.infoRow}>
+                  <View style={styles.infoIcon}>
+                    <Building2 size={20} color="#6b7280" />
+                  </View>
+                  <View style={styles.infoContent}>
+                    <Text style={styles.infoLabel}>Şirket ID</Text>
+                    <Text style={styles.infoValue} numberOfLines={1}>
+                      {profile?.company_id}
+                    </Text>
+                  </View>
+                </View>
+              </>
+            )}
+
+            {profile?.role === 'personnel' && (
+              <>
+                <View style={styles.divider} />
+                <TouchableOpacity
+                  style={styles.infoRow}
+                  onPress={() => setEditPersonalInfoModal(true)}
+                >
+                  <View style={styles.infoIcon}>
+                    <IdCard size={20} color="#6b7280" />
+                  </View>
+                  <View style={styles.infoContent}>
+                    <Text style={styles.infoLabel}>TC Kimlik No</Text>
+                    <Text style={styles.infoValue}>
+                      {tcIdentityNo || 'Belirtilmemiş (Zorunlu)'}
+                    </Text>
+                  </View>
+                  <Edit2 size={16} color="#6b7280" />
+                </TouchableOpacity>
+
+                <View style={styles.divider} />
+                <TouchableOpacity
+                  style={styles.infoRow}
+                  onPress={() => setEditPersonalInfoModal(true)}
+                >
+                  <View style={styles.infoIcon}>
+                    <Calendar size={20} color="#6b7280" />
+                  </View>
+                  <View style={styles.infoContent}>
+                    <Text style={styles.infoLabel}>Doğum Tarihi</Text>
+                    <Text style={styles.infoValue}>
+                      {birthDate ? new Date(birthDate).toLocaleDateString('tr-TR') : 'Belirtilmemiş (Zorunlu)'}
+                    </Text>
+                  </View>
+                  <Edit2 size={16} color="#6b7280" />
+                </TouchableOpacity>
+
+                <View style={styles.divider} />
+                <View style={styles.infoRow}>
+                  <View style={styles.infoIcon}>
+                    <Briefcase size={20} color="#6b7280" />
+                  </View>
+                  <View style={styles.infoContent}>
+                    <Text style={styles.infoLabel}>Meslek</Text>
+                    <PersonnelTypeSelector
+                      selectedIds={selectedPersonnelTypeIds}
+                      onSelectionChange={handlePersonnelTypeChange}
+                      allowAddNew={true}
+                    />
+                    {selectedPersonnelTypeIds.length === 0 && (
+                      <Text style={styles.warningText}>En az bir meslek seçilmelidir</Text>
+                    )}
+                  </View>
+                </View>
+
+                <View style={styles.divider} />
+                <TouchableOpacity
+                  style={styles.infoRow}
+                  onPress={() => setEditLocationModal(true)}
+                >
+                  <View style={styles.infoIcon}>
+                    <MapPin size={20} color="#6b7280" />
+                  </View>
+                  <View style={styles.infoContent}>
+                    <Text style={styles.infoLabel}>Konum</Text>
+                    <Text style={styles.infoValue}>
+                      {city && district ? `${district} / ${city}` : 'Belirtilmemiş (Zorunlu)'}
+                    </Text>
+                  </View>
+                  <Edit2 size={16} color="#6b7280" />
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Uygulama</Text>
+
+          <View style={styles.infoCard}>
+            <View style={styles.infoRow}>
+              <View style={styles.infoContent}>
+                <Text style={styles.infoLabel}>Versiyon</Text>
+                <Text style={styles.infoValue}>Greenco v1.0.0</Text>
+              </View>
+            </View>
+            <View style={styles.divider} />
+            <View style={styles.infoRow}>
+              <View style={styles.infoContent}>
+                <Text style={styles.infoLabel}>Hesap Durumu</Text>
+                <Text style={[styles.infoValue, { color: profile?.is_active ? '#059669' : '#dc2626' }]}>
+                  {profile?.is_active ? 'Aktif' : 'Pasif'}
+                </Text>
+              </View>
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
+            <LogOut size={20} color="#dc2626" />
+            <Text style={styles.signOutText}>Çıkış Yap</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.footer}>
+          <Text style={styles.footerText}>
+            © 2024 Greenco - Saha Personeli Yönetim Sistemi
+          </Text>
+          <Text style={styles.footerSubtext}>
+            QR Kod ve Geofence Teknolojisi ile %100 Doğrulanmış Takip
           </Text>
         </View>
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Hesap Bilgileri</Text>
-
-        <View style={styles.infoCard}>
-          <View style={styles.infoRow}>
-            <View style={styles.infoIcon}>
-              <Mail size={20} color="#6b7280" />
-            </View>
-            <View style={styles.infoContent}>
-              <Text style={styles.infoLabel}>E-posta</Text>
-              <Text style={styles.infoValue}>{user?.email}</Text>
-            </View>
-          </View>
-
-          <View style={styles.divider} />
-
-          <View style={styles.infoRow}>
-            <View style={styles.infoIcon}>
-              <Phone size={20} color="#6b7280" />
-            </View>
-            <View style={styles.infoContent}>
-              <Text style={styles.infoLabel}>Telefon</Text>
-              <Text style={styles.infoValue}>
-                {profile?.phone || 'Belirtilmemiş'}
-              </Text>
-            </View>
-          </View>
-
-          {profile?.company_id && (
-            <>
-              <View style={styles.divider} />
-              <View style={styles.infoRow}>
-                <View style={styles.infoIcon}>
-                  <Building2 size={20} color="#6b7280" />
-                </View>
-                <View style={styles.infoContent}>
-                  <Text style={styles.infoLabel}>Şirket ID</Text>
-                  <Text style={styles.infoValue} numberOfLines={1}>
-                    {profile?.company_id}
-                  </Text>
-                </View>
-              </View>
-            </>
-          )}
-
-          {profile?.role === 'personnel' && (
-            <>
-              <View style={styles.divider} />
-              <TouchableOpacity
-                style={styles.infoRow}
-                onPress={() => setEditPersonalInfoModal(true)}
-              >
-                <View style={styles.infoIcon}>
-                  <IdCard size={20} color="#6b7280" />
-                </View>
-                <View style={styles.infoContent}>
-                  <Text style={styles.infoLabel}>TC Kimlik No</Text>
-                  <Text style={styles.infoValue}>
-                    {tcIdentityNo || 'Belirtilmemiş (Zorunlu)'}
-                  </Text>
-                </View>
-                <Edit2 size={16} color="#6b7280" />
-              </TouchableOpacity>
-
-              <View style={styles.divider} />
-              <TouchableOpacity
-                style={styles.infoRow}
-                onPress={() => setEditPersonalInfoModal(true)}
-              >
-                <View style={styles.infoIcon}>
-                  <Calendar size={20} color="#6b7280" />
-                </View>
-                <View style={styles.infoContent}>
-                  <Text style={styles.infoLabel}>Doğum Tarihi</Text>
-                  <Text style={styles.infoValue}>
-                    {birthDate ? new Date(birthDate).toLocaleDateString('tr-TR') : 'Belirtilmemiş (Zorunlu)'}
-                  </Text>
-                </View>
-                <Edit2 size={16} color="#6b7280" />
-              </TouchableOpacity>
-
-              <View style={styles.divider} />
-              <View style={styles.infoRow}>
-                <View style={styles.infoIcon}>
-                  <Briefcase size={20} color="#6b7280" />
-                </View>
-                <View style={styles.infoContent}>
-                  <Text style={styles.infoLabel}>Meslek</Text>
-                  <PersonnelTypeSelector
-                    selectedIds={selectedPersonnelTypeIds}
-                    onSelectionChange={handlePersonnelTypeChange}
-                    allowAddNew={true}
-                  />
-                  {selectedPersonnelTypeIds.length === 0 && (
-                    <Text style={styles.warningText}>En az bir meslek seçilmelidir</Text>
-                  )}
-                </View>
-              </View>
-
-              <View style={styles.divider} />
-              <TouchableOpacity
-                style={styles.infoRow}
-                onPress={() => setEditLocationModal(true)}
-              >
-                <View style={styles.infoIcon}>
-                  <MapPin size={20} color="#6b7280" />
-                </View>
-                <View style={styles.infoContent}>
-                  <Text style={styles.infoLabel}>Konum</Text>
-                  <Text style={styles.infoValue}>
-                    {city && district ? `${district} / ${city}` : 'Belirtilmemiş (Zorunlu)'}
-                  </Text>
-                </View>
-                <Edit2 size={16} color="#6b7280" />
-              </TouchableOpacity>
-            </>
-          )}
-        </View>
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Uygulama</Text>
-
-        <View style={styles.infoCard}>
-          <View style={styles.infoRow}>
-            <View style={styles.infoContent}>
-              <Text style={styles.infoLabel}>Versiyon</Text>
-              <Text style={styles.infoValue}>Greenco v1.0.0</Text>
-            </View>
-          </View>
-          <View style={styles.divider} />
-          <View style={styles.infoRow}>
-            <View style={styles.infoContent}>
-              <Text style={styles.infoLabel}>Hesap Durumu</Text>
-              <Text style={[styles.infoValue, { color: profile?.is_active ? '#059669' : '#dc2626' }]}>
-                {profile?.is_active ? 'Aktif' : 'Pasif'}
-              </Text>
-            </View>
-          </View>
-        </View>
-      </View>
-
-      <View style={styles.section}>
-        <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
-          <LogOut size={20} color="#dc2626" />
-          <Text style={styles.signOutText}>Çıkış Yap</Text>
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.footer}>
-        <Text style={styles.footerText}>
-          © 2024 Greenco - Saha Personeli Yönetim Sistemi
-        </Text>
-        <Text style={styles.footerSubtext}>
-          QR Kod ve Geofence Teknolojisi ile %100 Doğrulanmış Takip
-        </Text>
-      </View>
       </ScrollView>
 
       <Modal visible={editPersonalInfoModal} animationType="slide" transparent>

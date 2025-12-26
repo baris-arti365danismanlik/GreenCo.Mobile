@@ -67,46 +67,84 @@ export default function OperationsProjectsScreen() {
     try {
       setLoading(true);
 
-      const { data: requests, error: requestsError } = await supabase
-        .from('personnel_requests')
-        .select('project_id, status, personnel_positions, created_at')
-        .eq('requested_by', user?.id)
-        .not('project_id', 'is', null)
-        .order('created_at', { ascending: false });
+      const { data: currentProfile } = await supabase
+        .from('profiles')
+        .select('company_id, role')
+        .eq('id', user?.id)
+        .single();
 
-      if (requestsError) throw requestsError;
+      const companyId = currentProfile?.company_id;
+      let projectsData: any[] = [];
+      const projectMap = new Map<string, { status: string }>();
 
-      if (!requests || requests.length === 0) {
-        setProjects([]);
-        return;
+      if (currentProfile?.role === 'operations' && companyId) {
+        // Operations: Fetch by Company ID
+        const { data, error } = await supabase
+          .from('projects_greenco')
+          .select(`
+            id,
+            name,
+            address,
+            status,
+            start_date,
+            end_date
+          `)
+          .eq('company_id', companyId)
+          .order('name');
+
+        if (error) throw error;
+        projectsData = data || [];
+
+        // Fetch latest requests for these projects to show status
+        if (projectsData.length > 0) {
+          const projectIds = projectsData.map(p => p.id);
+          const { data: requests } = await supabase
+            .from('personnel_requests')
+            .select('project_id, status, created_at')
+            .in('project_id', projectIds)
+            .order('created_at', { ascending: false });
+
+          requests?.forEach(req => {
+            if (req.project_id && !projectMap.has(req.project_id)) {
+              projectMap.set(req.project_id, { status: req.status });
+            }
+          });
+        }
+      } else {
+        // Fallback: Fetch by requests made
+        const { data: requests, error: requestsError } = await supabase
+          .from('personnel_requests')
+          .select('project_id, status, personnel_positions, created_at')
+          .eq('requested_by', user?.id)
+          .not('project_id', 'is', null)
+          .order('created_at', { ascending: false });
+
+        if (requestsError) throw requestsError;
+
+        if (!requests || requests.length === 0) {
+          setProjects([]);
+          return;
+        }
+
+        requests.forEach(req => {
+          if (req.project_id && !projectMap.has(req.project_id)) {
+            projectMap.set(req.project_id, { status: req.status });
+          }
+        });
+
+        const projectIds = Array.from(projectMap.keys());
+        const { data: pData, error: pError } = await supabase
+          .from('projects_greenco')
+          .select('id, name, address, status, start_date, end_date')
+          .in('id', projectIds);
+
+        if (pError) throw pError;
+        projectsData = pData || [];
       }
 
-      const projectMap = new Map<string, { status: string }>();
-      requests.forEach(req => {
-        if (req.project_id && !projectMap.has(req.project_id)) {
-          projectMap.set(req.project_id, { status: req.status });
-        }
-      });
-
-      const projectIds = Array.from(projectMap.keys());
-
-      const { data: projectsData, error: projectsError } = await supabase
-        .from('projects_greenco')
-        .select(`
-          id,
-          name,
-          address,
-          status,
-          start_date,
-          end_date
-        `)
-        .in('id', projectIds);
-
-      if (projectsError) throw projectsError;
-
       const projectsWithStats = await Promise.all(
-        (projectsData || []).map(async (project) => {
-          const projectInfo = projectMap.get(project.id)!;
+        projectsData.map(async (project) => {
+          const requestStatus = projectMap.get(project.id)?.status || project.status || 'pending';
 
           const { count: assignedCount } = await supabase
             .from('project_assignments')
@@ -129,7 +167,7 @@ export default function OperationsProjectsScreen() {
 
           return {
             ...project,
-            request_status: projectInfo.status,
+            request_status: requestStatus,
             assigned_personnel: assignedCount || 0,
             attendance_days: uniqueDays.size,
           };

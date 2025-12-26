@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,7 +8,6 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
-import { useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { COLORS } from '@/constants/theme';
@@ -32,6 +31,7 @@ type Bid = {
   description: string;
   status: 'pending' | 'accepted' | 'rejected' | 'withdrawn';
   created_at: string;
+  assignment_id?: string; // Added field
   technical_service_requests: {
     id: string;
     title: string;
@@ -85,6 +85,7 @@ export default function MyBids() {
       }
 
       const requestIds = bidsData.map(b => b.request_id);
+      const bidIds = bidsData.map(b => b.id);
 
       const { data: requestsData, error: requestsError } = await supabase
         .from('technical_service_requests')
@@ -108,15 +109,26 @@ export default function MyBids() {
         throw serviceTypesError;
       }
 
+      // Fetch Existing Assignments (Jobs)
+      const { data: assignmentsData, error: assignmentsError } = await supabase
+        .from('technical_service_assignments')
+        .select('id, bid_id')
+        .in('bid_id', bidIds);
+
+      if (assignmentsError) throw assignmentsError;
+
+      const assignmentsMap = new Map(assignmentsData?.map(a => [a.bid_id, a.id]) || []);
       const serviceTypesMap = new Map(serviceTypesData?.map(st => [st.id, st.name]) || []);
       const requestsMap = new Map(requestsData?.map(r => [r.id, r]) || []);
 
       const enrichedBids = bidsData.map(bid => {
         const request = requestsMap.get(bid.request_id);
         const serviceTypeName = request ? serviceTypesMap.get(request.service_type_id) : 'Bilinmiyor';
+        const assignmentId = assignmentsMap.get(bid.id);
 
         return {
           ...bid,
+          assignment_id: assignmentId,
           technical_service_requests: {
             id: request?.id || '',
             title: request?.title || 'Bilinmiyor',
@@ -389,63 +401,78 @@ export default function MyBids() {
                     </Text>
                   </View>
 
-                <Text style={styles.bidTitle}>
-                  {bid.technical_service_requests.title}
-                </Text>
+                  <Text style={styles.bidTitle}>
+                    {bid.technical_service_requests.title}
+                  </Text>
 
-                {bid.bid_type === 'quote' && (
-                  <View style={styles.bidDetails}>
-                    <View style={styles.bidDetailItem}>
-                      <DollarSign size={16} color={COLORS.textLight} />
-                      <Text style={styles.bidDetailLabel}>Teklif:</Text>
-                      <Text style={styles.bidDetailValue}>
-                        {bid.bid_amount ? formatCurrency(bid.bid_amount) : '-'}
-                      </Text>
+                  {bid.bid_type === 'quote' && (
+                    <View style={styles.bidDetails}>
+                      <View style={styles.bidDetailItem}>
+                        <DollarSign size={16} color={COLORS.textLight} />
+                        <Text style={styles.bidDetailLabel}>Teklif:</Text>
+                        <Text style={styles.bidDetailValue}>
+                          {bid.bid_amount ? formatCurrency(bid.bid_amount) : '-'}
+                        </Text>
+                      </View>
+                      <View style={styles.bidDetailItem}>
+                        <Clock size={16} color={COLORS.textLight} />
+                        <Text style={styles.bidDetailLabel}>Süre:</Text>
+                        <Text style={styles.bidDetailValue}>
+                          {bid.estimated_duration || '-'}
+                        </Text>
+                      </View>
                     </View>
-                    <View style={styles.bidDetailItem}>
-                      <Clock size={16} color={COLORS.textLight} />
-                      <Text style={styles.bidDetailLabel}>Süre:</Text>
-                      <Text style={styles.bidDetailValue}>
-                        {bid.estimated_duration || '-'}
-                      </Text>
+                  )}
+
+                  {bid.bid_type === 'diagnostic_service' && bid.bid_amount && (
+                    <View style={styles.bidDetails}>
+                      <View style={styles.bidDetailItem}>
+                        <DollarSign size={16} color={COLORS.textLight} />
+                        <Text style={styles.bidDetailLabel}>Servis Ücreti:</Text>
+                        <Text style={styles.bidDetailValue}>
+                          {formatCurrency(bid.bid_amount)}
+                        </Text>
+                      </View>
                     </View>
-                  </View>
-                )}
+                  )}
 
-                {bid.bid_type === 'diagnostic_service' && bid.bid_amount && (
-                  <View style={styles.bidDetails}>
-                    <View style={styles.bidDetailItem}>
-                      <DollarSign size={16} color={COLORS.textLight} />
-                      <Text style={styles.bidDetailLabel}>Servis Ücreti:</Text>
-                      <Text style={styles.bidDetailValue}>
-                        {formatCurrency(bid.bid_amount)}
-                      </Text>
-                    </View>
-                  </View>
-                )}
+                  <Text style={styles.bidDesc} numberOfLines={2}>
+                    {bid.description}
+                  </Text>
 
-                <Text style={styles.bidDesc} numberOfLines={2}>
-                  {bid.description}
-                </Text>
+                  <Text style={styles.bidDate}>Teklif Tarihi: {formatDate(bid.created_at)}</Text>
 
-                <Text style={styles.bidDate}>Teklif Tarihi: {formatDate(bid.created_at)}</Text>
-
-                {bid.status === 'accepted' && (
-                  <TouchableOpacity
-                    style={styles.startJobBtn}
-                    onPress={() => handleStartJob(bid)}
-                    disabled={startingJob === bid.id}
-                  >
-                    {startingJob === bid.id ? (
-                      <ActivityIndicator color="white" size="small" />
-                    ) : (
-                      <>
-                        <CheckCircle size={18} color="white" />
-                        <Text style={styles.startJobBtnText}>İşe Başla</Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
-                )}
+                  {bid.status === 'accepted' && (
+                    <>
+                      {bid.assignment_id ? (
+                        <TouchableOpacity
+                          style={[styles.startJobBtn, { backgroundColor: '#0284c7' }]}
+                          onPress={() => router.push({
+                            pathname: '/technical-company/job-detail',
+                            params: { id: bid.assignment_id }
+                          })}
+                        >
+                          <CheckCircle size={18} color="white" />
+                          <Text style={styles.startJobBtnText}>İşi Görüntüle</Text>
+                        </TouchableOpacity>
+                      ) : (
+                        <TouchableOpacity
+                          style={styles.startJobBtn}
+                          onPress={() => handleStartJob(bid)}
+                          disabled={startingJob === bid.id}
+                        >
+                          {startingJob === bid.id ? (
+                            <ActivityIndicator color="white" size="small" />
+                          ) : (
+                            <>
+                              <CheckCircle size={18} color="white" />
+                              <Text style={styles.startJobBtnText}>İşe Başla</Text>
+                            </>
+                          )}
+                        </TouchableOpacity>
+                      )}
+                    </>
+                  )}
                 </View>
               );
             })}

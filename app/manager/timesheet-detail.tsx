@@ -90,6 +90,7 @@ export default function TimesheetDetailScreen() {
       const workDays = calculateWorkDays(timesheetData.period_start, timesheetData.period_end);
       setExpectedWorkDays(workDays);
 
+      // 1. Fetch Attendance Records
       const { data: attendanceData, error: attendanceError } = await supabase
         .from('attendance_records')
         .select(`
@@ -110,6 +111,33 @@ export default function TimesheetDetailScreen() {
 
       if (attendanceError) throw attendanceError;
 
+      // 2. Fetch Manager Personnel (Source of Truth for Names via Edge Function)
+      let managerPersonnelMap = new Map<string, any>();
+      try {
+        const { data: session } = await supabase.auth.getSession();
+        if (session?.session?.access_token) {
+          const response = await fetch(
+            `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/get-manager-personnel`,
+            {
+              headers: {
+                'Authorization': `Bearer ${session.session.access_token}`,
+                'Content-Type': 'application/json',
+              },
+            }
+          );
+
+          if (response.ok) {
+            const result = await response.json();
+            const allPersonnel = result.data || [];
+            allPersonnel.forEach((p: any) => {
+              managerPersonnelMap.set(p.id, p);
+            });
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching manager personnel:', err);
+      }
+
       const personnelMap = new Map<string, PersonnelAttendance>();
 
       attendanceData?.forEach((record: any) => {
@@ -118,11 +146,19 @@ export default function TimesheetDetailScreen() {
         const isComplete = record.check_in_time && record.check_out_time;
 
         if (!personnelMap.has(workerId)) {
+          // Try to get info from Edge Function map first, fallback to Join result
+          const edgeProfile = managerPersonnelMap.get(workerId);
+          const joinProfile = record.profiles;
+
+          const fullName = edgeProfile?.full_name || joinProfile?.full_name || 'Bilinmiyor';
+          const avatarUrl = edgeProfile?.avatar_url || joinProfile?.avatar_url;
+          const position = edgeProfile?.personnel_types?.name || joinProfile?.personnel_types?.name;
+
           personnelMap.set(workerId, {
             worker_id: workerId,
-            full_name: record.profiles?.full_name || 'Bilinmiyor',
-            avatar_url: record.profiles?.avatar_url,
-            personnel_type: record.profiles?.personnel_types?.name,
+            full_name: fullName,
+            avatar_url: avatarUrl,
+            personnel_type: position,
             total_hours: 0,
             total_days: 0,
             overtime: 0,

@@ -73,7 +73,16 @@ export default function TechnicalDashboard() {
 
   const loadStats = async () => {
     try {
-      const { data } = await supabase
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role, company_id')
+        .eq('id', user.id)
+        .single();
+
+      let query = supabase
         .from('technical_service_requests')
         .select(`
           status,
@@ -82,6 +91,12 @@ export default function TechnicalDashboard() {
           floor,
           technical_service_types(name)
         `);
+
+      if (profile?.role === 'operations' && profile?.company_id) {
+        query = query.eq('company_id', profile.company_id);
+      }
+
+      const { data } = await query;
 
       if (data) {
         const newStats: Stats = {

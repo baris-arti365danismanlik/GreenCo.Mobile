@@ -5,9 +5,11 @@ import { ArrowLeft, FileText, Clock, CheckCircle, XCircle } from 'lucide-react-n
 import { COLORS } from '@/constants/theme';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function UnitInvoicesScreen() {
   const router = useRouter();
+  const { profile } = useAuth();
   const [loading, setLoading] = useState(true);
   const [invoices, setInvoices] = useState<any[]>([]);
 
@@ -18,18 +20,25 @@ export default function UnitInvoicesScreen() {
   const loadInvoices = async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase
+
+      let query = supabase
         .from('unit_invoices')
         .select(`
           *,
-          project:projects_greenco(name),
+          project:projects_greenco!inner(name, company_id),
           work_order:unit_based_work_orders(
             order_number,
             quantity,
             unit_price,
             service_type:service_types(name, unit_type)
           )
-        `)
+        `);
+
+      if (profile?.company_id) {
+        query = query.eq('project.company_id', profile.company_id);
+      }
+
+      const { data, error } = await query
         .in('status', ['pending_operations_approval', 'operations_approved'])
         .order('created_at', { ascending: false });
 

@@ -13,6 +13,7 @@ import { useRouter } from 'expo-router';
 import { ArrowLeft, Clock, CheckCircle, DollarSign, FileText, XCircle } from 'lucide-react-native';
 import { COLORS } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/contexts/AuthContext';
 
 type Invoice = {
   id: string;
@@ -33,6 +34,7 @@ type Invoice = {
 
 export default function OperationsInvoicesScreen() {
   const router = useRouter();
+  const { profile } = useAuth();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'pending' | 'submitted'>('all');
@@ -46,15 +48,21 @@ export default function OperationsInvoicesScreen() {
 
   const loadInvoices = async () => {
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('invoices')
         .select(`
           *,
           projects_greenco!inner (
-            name
+            name,
+            company_id
           )
-        `)
-        .order('created_at', { ascending: false });
+        `);
+
+      if (profile?.company_id) {
+        query = query.eq('projects_greenco.company_id', profile.company_id);
+      }
+
+      const { data, error } = await query.order('created_at', { ascending: false });
 
       if (error) throw error;
 

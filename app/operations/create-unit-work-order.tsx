@@ -28,12 +28,18 @@ export default function CreateUnitWorkOrderScreen() {
 
   const loadData = async () => {
     try {
+      let projectsQuery = supabase
+        .from('projects_greenco')
+        .select('id, name')
+        .eq('is_active', true)
+        .order('name');
+
+      if (profile?.company_id) {
+        projectsQuery = projectsQuery.eq('company_id', profile.company_id);
+      }
+
       const [projectsRes, serviceTypesRes] = await Promise.all([
-        supabase
-          .from('projects_greenco')
-          .select('id, name')
-          .eq('is_active', true)
-          .order('name'),
+        projectsQuery,
         supabase
           .from('service_types')
           .select('*')
