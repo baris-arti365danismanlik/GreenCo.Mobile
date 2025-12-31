@@ -365,7 +365,7 @@ export default function TechnicalCompanies() {
             const formattedPhone = company.phone.startsWith('+')
               ? company.phone
               : `+90${company.phone}`;
-            const email = `${formattedPhone.replace('+', '')}@greenco.app`;
+            const email = `${formattedPhone.replace('+', '')}@kadro360.app`;
             console.log('Company deleted, user email:', email);
           } catch (authError) {
             console.error('Error deleting auth user:', authError);
@@ -449,7 +449,7 @@ export default function TechnicalCompanies() {
             const formattedPhone = editingCompany.phone.startsWith('+')
               ? editingCompany.phone
               : `+90${editingCompany.phone}`;
-            const email = `${formattedPhone.replace('+', '')}@greenco.app`;
+            const email = `${formattedPhone.replace('+', '')}@kadro360.app`;
 
             const { data: { session } } = await supabase.auth.getSession();
             if (!session) throw new Error('Oturum bulunamadı');
@@ -973,7 +973,7 @@ export default function TechnicalCompanies() {
                             style={[
                               styles.brandChip,
                               formData.authorized_brands[type.id]?.includes(brand.id) &&
-                                styles.brandChipSelected,
+                              styles.brandChipSelected,
                             ]}
                             onPress={() => {
                               const currentBrands = formData.authorized_brands[type.id] || [];
@@ -994,7 +994,7 @@ export default function TechnicalCompanies() {
                               style={[
                                 styles.brandText,
                                 formData.authorized_brands[type.id]?.includes(brand.id) &&
-                                  styles.brandTextSelected,
+                                styles.brandTextSelected,
                               ]}
                             >
                               {brand.name}
@@ -1051,7 +1051,7 @@ export default function TechnicalCompanies() {
                 onPress={handleSubmit}
                 disabled={submitting}
               >
-{submitting ? (
+                {submitting ? (
                   <ActivityIndicator color="white" />
                 ) : (
                   <Text style={styles.submitBtnText}>

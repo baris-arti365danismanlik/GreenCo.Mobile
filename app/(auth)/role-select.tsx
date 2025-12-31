@@ -4,7 +4,7 @@ import { useRouter } from 'expo-router';
 import { User, Briefcase, ClipboardList, ShieldCheck, ChevronRight, Wrench, Building2 } from 'lucide-react-native';
 import { COLORS } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
-import { GreencoLogo } from '@/components/GreencoLogo';
+import { Kadro360Logo } from '@/components/Kadro360Logo';
 
 type RoleOption = {
   key: string;
@@ -99,7 +99,7 @@ export default function RoleSelect() {
         contentContainerStyle={styles.centerContent}
       >
         <View style={styles.logoContainer}>
-          <GreencoLogo size="medium" variant="light" />
+          <Kadro360Logo size="medium" variant="colored" />
         </View>
         <Text style={styles.title}>Hoş Geldiniz</Text>
         <Text style={styles.subtitle}>{profile?.full_name || 'Kullanıcı'}</Text>

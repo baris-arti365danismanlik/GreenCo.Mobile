@@ -129,10 +129,12 @@ export default function ProjectDetail() {
             .select('check_in_time, check_out_time')
             .eq('worker_id', p.id)
             .eq('project_id', id)
-            .gte('check_in_time', todayStart.toISOString())
-            .maybeSingle();
+            .gte('check_in_time', todayStart.toISOString());
 
           const location = [p.city, p.district].filter(Boolean).join(' / ') || null;
+
+          // Check if ANY record has no check_out_time
+          const isWorking = todayAttendance?.some(r => r.check_in_time && !r.check_out_time);
 
           return {
             id: p.id,
@@ -141,7 +143,7 @@ export default function ProjectDetail() {
             is_active: p.is_active,
             user_id: p.id,
             location: location,
-            isWorking: todayAttendance && todayAttendance.check_in_time && !todayAttendance.check_out_time,
+            isWorking: isWorking,
             avatar_url: p.avatar_url,
           };
         })

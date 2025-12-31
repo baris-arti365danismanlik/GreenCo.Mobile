@@ -4,7 +4,7 @@ import { useRouter } from 'expo-router';
 import { ArrowLeft, DollarSign, Clock, Users, UserPlus, ClipboardList, CheckCircle, XCircle, Hourglass, FileText, ChevronRight } from 'lucide-react-native';
 import { COLORS } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
-import { GreencoLogo } from '@/components/GreencoLogo';
+import { Kadro360Logo } from '@/components/Kadro360Logo';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 
@@ -52,14 +52,13 @@ export default function OperationsDashboard() {
         .select(`
           total_amount, 
           status,
-          timesheets!inner(
-            project_id,
-            projects_greenco!inner(company_id)
+          projects_greenco!inner(
+            company_id
           )
         `);
 
       if (profile?.company_id) {
-        invoicesQuery = invoicesQuery.eq('timesheets.projects_greenco.company_id', profile.company_id);
+        invoicesQuery = invoicesQuery.eq('projects_greenco.company_id', profile.company_id);
       }
 
       const { data: invoices } = await invoicesQuery;
@@ -78,8 +77,8 @@ export default function OperationsDashboard() {
       let assignmentsQuery = supabase
         .from('project_assignments')
         .select(`
-          worker_id, 
-          profiles!inner(personnel_type), 
+          personnel_id, 
+          profiles!inner(role), 
           created_at,
           project:projects_greenco!inner(company_id)
         `)
@@ -92,8 +91,8 @@ export default function OperationsDashboard() {
       const { data: assignments } = await assignmentsQuery;
 
       const activeOutsourcePersonnel = assignments?.filter(a => {
-        const profile = Array.isArray(a.profiles) ? a.profiles[0] : a.profiles;
-        return profile?.personnel_type === 'outsource';
+        const p = Array.isArray(a.profiles) ? a.profiles[0] : a.profiles;
+        return p?.role === 'personnel' || p?.role === 'outsource_personnel';
       }).length || 0;
 
       const currentMonth = new Date().getMonth();
@@ -120,24 +119,24 @@ export default function OperationsDashboard() {
       const { data: requests } = await requestsQuery;
 
       const pendingRequests = requests?.filter(r => r.status === 'pending').length || 0;
-      const approvedRequests = requests?.filter(r => r.status === 'approved' || r.status === 'awaiting_assignment').length || 0;
+      const approvedRequests = requests?.filter(r => r.status === 'approved' || r.status === 'awaiting_assignment' || r.status === 'completed').length || 0;
       const rejectedRequests = requests?.filter(r => r.status === 'rejected').length || 0;
 
 
       //--- 4. Project Costs (Maliyet Analizi) ---
       let projectInvoicesQuery = supabase
         .from('invoices')
-        .select('total_amount, timesheets!inner(project_id, projects_greenco!inner(name, company_id))')
+        .select('total_amount, projects_greenco!inner(name, company_id)')
         .eq('status', 'approved');
 
       if (profile?.company_id) {
-        projectInvoicesQuery = projectInvoicesQuery.eq('timesheets.projects_greenco.company_id', profile.company_id);
+        projectInvoicesQuery = projectInvoicesQuery.eq('projects_greenco.company_id', profile.company_id);
       }
 
       const { data: projectInvoices } = await projectInvoicesQuery;
 
       const projectCostsMap = projectInvoices?.reduce((acc: any, inv: any) => {
-        const projectName = inv.timesheets?.projects_greenco?.name;
+        const projectName = inv.projects_greenco?.name;
         if (projectName) {
           acc[projectName] = (acc[projectName] || 0) + (inv.total_amount || 0);
         }
@@ -293,7 +292,7 @@ export default function OperationsDashboard() {
 
 
         <View style={styles.footer}>
-          <GreencoLogo size="small" variant="light" />
+          <Kadro360Logo size="small" variant="colored" />
         </View>
       </ScrollView>
     </SafeAreaView>

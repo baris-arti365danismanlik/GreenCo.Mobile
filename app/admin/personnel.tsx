@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { ArrowLeft, Search, User, X, Calendar, Clock } from 'lucide-react-native';
+import { ArrowLeft, Search, User, X, Calendar, Clock, Briefcase } from 'lucide-react-native';
 import { COLORS } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 
@@ -128,6 +128,46 @@ export default function AdminPersonnel() {
   const closeModal = () => {
     setModalVisible(false);
     setSelectedPersonnel(null);
+  };
+
+  const [projectsModalVisible, setProjectsModalVisible] = useState(false);
+  const [assignedProjects, setAssignedProjects] = useState<any[]>([]);
+  const [loadingProjects, setLoadingProjects] = useState(false);
+
+  const loadAssignedProjects = async () => {
+    if (!selectedPersonnel) return;
+
+    setLoadingProjects(true);
+    setProjectsModalVisible(true);
+
+    try {
+      const { data, error } = await supabase
+        .from('project_assignments')
+        .select(`
+          project:projects_greenco (
+            name,
+            company:companies (
+              name
+            )
+          )
+        `)
+        .eq('personnel_id', selectedPersonnel.id)
+        .is('removed_at', null);
+
+      if (error) throw error;
+
+      const formatted = (data || []).map((item: any) => ({
+        projectName: item.project?.name,
+        companyName: item.project?.company?.name || 'Bilinmeyen Firma'
+      }));
+
+      setAssignedProjects(formatted);
+    } catch (error) {
+      console.error('Projeler yüklenemedi:', error);
+      Alert.alert('Hata', 'Atanan projeler yüklenemedi');
+    } finally {
+      setLoadingProjects(false);
+    }
   };
 
   return (
@@ -293,6 +333,14 @@ export default function AdminPersonnel() {
             </ScrollView>
 
             <TouchableOpacity
+              style={[styles.actionBtn, { backgroundColor: COLORS.secondary, marginBottom: 12 }]}
+              onPress={loadAssignedProjects}
+            >
+              <Briefcase size={20} color="white" />
+              <Text style={styles.actionBtnText}>Atandığı Projeler</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
               style={styles.actionBtn}
               onPress={() => {
                 closeModal();
@@ -304,6 +352,40 @@ export default function AdminPersonnel() {
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.closeBtn} onPress={closeModal}>
+              <Text style={styles.closeBtnText}>Kapat</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={projectsModalVisible} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { maxHeight: '60%' }]}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Atandığı Projeler</Text>
+              <TouchableOpacity onPress={() => setProjectsModalVisible(false)} style={styles.closeIconBtn}>
+                <X size={24} color={COLORS.secondary} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.modalScroll}>
+              {loadingProjects ? (
+                <Text style={{ textAlign: 'center', padding: 20, color: COLORS.textLight }}>Yükleniyor...</Text>
+              ) : assignedProjects.length === 0 ? (
+                <View style={{ alignItems: 'center', padding: 30 }}>
+                  <Briefcase size={40} color={COLORS.textLight} />
+                  <Text style={{ marginTop: 10, color: COLORS.textLight }}>Atanmış proje bulunamadı</Text>
+                </View>
+              ) : (
+                assignedProjects.map((item, index) => (
+                  <View key={index} style={styles.infoRow}>
+                    <Text style={styles.infoValue}>{item.companyName} - {item.projectName}</Text>
+                  </View>
+                ))
+              )}
+            </ScrollView>
+
+            <TouchableOpacity style={styles.closeBtn} onPress={() => setProjectsModalVisible(false)}>
               <Text style={styles.closeBtnText}>Kapat</Text>
             </TouchableOpacity>
           </View>

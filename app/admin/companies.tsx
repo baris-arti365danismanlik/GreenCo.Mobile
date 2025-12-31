@@ -141,6 +141,38 @@ export default function CompaniesManagement() {
 
     try {
       setSaving(true);
+
+      // PRE-CHECK: Duplicate Validation
+      if (!editingCompany) {
+        // 1. Check Tax Number
+        const { data: taxCheck } = await supabase
+          .from('companies')
+          .select('id')
+          .eq('tax_number', formData.tax_number)
+          .is('deleted_at', null) // Only check active/non-deleted companies
+          .maybeSingle();
+
+        if (taxCheck) {
+          setSaving(false);
+          Alert.alert('Hata', 'Bu vergi numarası zaten başka bir firmada kayıtlı.');
+          return;
+        }
+
+        // 2. Check Company Name
+        const { data: nameCheck } = await supabase
+          .from('companies')
+          .select('id')
+          .ilike('name', formData.name) // Case insensitive check
+          .is('deleted_at', null)
+          .maybeSingle();
+
+        if (nameCheck) {
+          setSaving(false);
+          Alert.alert('Hata', 'Bu şirket adı sistemde zaten kayıtlı.');
+          return;
+        }
+      }
+
       await forceRefreshSession();
 
       // Kullanıcının girdiği yüzdeyi (örn: 10) ondalığa çevir (0.10)
@@ -182,11 +214,19 @@ export default function CompaniesManagement() {
     } catch (error: any) {
       console.error('Error saving company:', error);
 
-      if (error.code === '23505') {
-        Alert.alert('Hata', 'Bu vergi numarası zaten başka bir firmada kayıtlı. Lütfen farklı bir vergi numarası girin.');
-      } else {
-        Alert.alert('Hata', error.message || 'İşlem başarısız');
+      let errorMessage = error.message || 'İşlem başarısız';
+
+      if (error.code === '23505' || errorMessage.includes('unique constraint')) {
+        if (errorMessage.includes('tax_number')) {
+          errorMessage = 'Bu vergi numarası zaten başka bir firmada kayıtlı.';
+        } else if (errorMessage.includes('name')) {
+          errorMessage = 'Bu şirket adı sistemde zaten kayıtlı.';
+        } else {
+          errorMessage = 'Bu kayıt mükerrer olduğu için oluşturulamadı (Vergi No veya İsim çakışması).';
+        }
       }
+
+      Alert.alert('Hata', errorMessage);
     } finally {
       setSaving(false);
     }
@@ -220,17 +260,41 @@ export default function CompaniesManagement() {
       try {
         await forceRefreshSession();
 
-        const { error } = await supabase
+        // 1. Firmayı soft-delete yap (Hem deleted_at hem is_active)
+        const { error: companyError } = await supabase
           .from('companies')
-          .update({ deleted_at: new Date().toISOString() })
+          .update({
+            deleted_at: new Date().toISOString(),
+            is_active: false
+          })
           .eq('id', companyId);
 
-        if (error) throw error;
+        if (companyError) throw companyError;
+
+        // 2. Firmaya ait projeleri pasife çek
+        const { error: projectsError } = await supabase
+          .from('projects_greenco')
+          .update({ is_active: false })
+          .eq('company_id', companyId);
+
+        if (projectsError) {
+          console.warn('Projeler pasife çekilirken hata:', projectsError);
+        }
+
+        // 3. Firmaya ait kullanıcıları pasife çek
+        const { error: profilesError } = await supabase
+          .from('profiles')
+          .update({ is_active: false })
+          .eq('company_id', companyId);
+
+        if (profilesError) {
+          console.warn('Kullanıcılar pasife çekilirken hata:', profilesError);
+        }
 
         if (Platform.OS === 'web') {
-          alert('Başarılı: Firma ve bağlı tüm kayıtlar silindi');
+          alert('Başarılı: Firma ve bağlı tüm kayıtlar silindi (Pasife alındı)');
         } else {
-          Alert.alert('Başarılı', 'Firma ve bağlı tüm kayıtlar silindi');
+          Alert.alert('Başarılı', 'Firma ve bağlı tüm kayıtlar silindi (Pasife alındı)');
         }
         loadData();
       } catch (error: any) {

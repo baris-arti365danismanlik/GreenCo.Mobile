@@ -159,17 +159,23 @@ export default function CreateRequestScreen() {
         projectsQuery = projectsQuery.eq('company_id', profile.company_id);
       }
 
+      let managersQuery = supabase
+        .from('profiles')
+        .select('id, full_name, phone')
+        .eq('role', 'project_manager')
+        .eq('is_active', true)
+        .order('full_name');
+
+      if (profile?.company_id) {
+        managersQuery = managersQuery.eq('company_id', profile.company_id);
+      }
+
       const [projectsRes, projectManagersRes, managersRes, typesRes] = await Promise.all([
         projectsQuery,
         supabase
           .from('project_managers')
           .select('project_id, manager_id'),
-        supabase
-          .from('profiles')
-          .select('id, full_name, phone')
-          .eq('role', 'project_manager')
-          .eq('is_active', true)
-          .order('full_name'),
+        managersQuery,
         supabase
           .from('personnel_types')
           .select('id, name')

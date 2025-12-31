@@ -111,33 +111,7 @@ export default function OperationsScreen() {
           </>
         )}
 
-        {hasTechnical && (
-          <>
-            <TouchableOpacity
-              style={styles.actionCard}
-              onPress={() => router.push('/technical/requests')}
-            >
-              <FolderOpen size={24} color={COLORS.blue} />
-              <Text style={styles.actionText}>Teknik Talepler</Text>
-            </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.actionCard}
-              onPress={() => router.push('/technical/create-request')}
-            >
-              <Plus size={24} color={COLORS.blue} />
-              <Text style={styles.actionText}>Teknik Talep Oluştur</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.actionCard}
-              onPress={() => router.push('/technical/companies')}
-            >
-              <Briefcase size={24} color={COLORS.purple} />
-              <Text style={styles.actionText}>Teknik Firmalar</Text>
-            </TouchableOpacity>
-          </>
-        )}
 
       </ScrollView>
     </SafeAreaView>

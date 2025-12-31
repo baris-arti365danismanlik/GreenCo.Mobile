@@ -4,7 +4,7 @@ import { useRouter } from 'expo-router';
 import { ArrowLeft, TrendingUp, TrendingDown, Users, FolderKanban, DollarSign, Star, Award, Filter, X, Check, ClipboardList, FileText, ChevronRight } from 'lucide-react-native';
 import { COLORS } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
-import { GreencoLogo } from '@/components/GreencoLogo';
+import { Kadro360Logo } from '@/components/Kadro360Logo';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 
@@ -79,7 +79,7 @@ export default function AdminDashboard() {
 
       let headcountQuery = supabase
         .from('project_assignments')
-        .select('user_id, projects_greenco!inner(company_id)')
+        .select('personnel_id, projects_greenco!inner(company_id)')
         .is('removed_at', null);
 
       if (selectedProjectId) {
@@ -90,7 +90,7 @@ export default function AdminDashboard() {
 
       const { data: assignments } = await headcountQuery;
       // Count unique personnel
-      const uniquePersonnel = new Set(assignments?.map((a: any) => a.user_id));
+      const uniquePersonnel = new Set(assignments?.map((a: any) => a.personnel_id));
       const headcount = uniquePersonnel.size;
 
       let projectQuery = supabase
@@ -446,7 +446,7 @@ export default function AdminDashboard() {
         </View>
 
         <View style={styles.footer}>
-          <GreencoLogo size="small" variant="light" />
+          <Kadro360Logo size="small" variant="colored" />
         </View>
       </ScrollView>
 

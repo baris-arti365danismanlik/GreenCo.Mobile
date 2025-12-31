@@ -17,7 +17,7 @@ Deno.serve(async (req: Request) => {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    
+
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
       auth: {
         autoRefreshToken: false,
@@ -27,9 +27,9 @@ Deno.serve(async (req: Request) => {
 
     const authHeader = req.headers.get('Authorization')!;
     const token = authHeader.replace('Bearer ', '');
-    
+
     const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token);
-    
+
     if (userError || !user) {
       return new Response(
         JSON.stringify({ error: 'Unauthorized' }),
@@ -119,6 +119,10 @@ Deno.serve(async (req: Request) => {
       .eq('id', authData.user.id);
 
     if (profileError) {
+      console.error('Profile update invalid, rolling back user creation:', profileError);
+      // Rollback: Delete the user we just created
+      await supabaseAdmin.auth.admin.deleteUser(authData.user.id);
+
       return new Response(
         JSON.stringify({ error: profileError.message }),
         {
@@ -129,7 +133,7 @@ Deno.serve(async (req: Request) => {
     }
 
     return new Response(
-      JSON.stringify({ 
+      JSON.stringify({
         message: 'User created successfully',
         user_id: authData.user.id,
       }),

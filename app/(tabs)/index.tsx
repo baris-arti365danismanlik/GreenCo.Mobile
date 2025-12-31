@@ -80,8 +80,8 @@ export default function HomeScreen() {
       const { data } = await supabase
         .from('project_assignments')
         .select('*, projects_greenco(id, name, address)')
-        .eq('worker_id', profile.id)
-        .eq('is_active', true)
+        .eq('personnel_id', profile.id)
+        .is('removed_at', null)
         .maybeSingle();
 
       setAssignment(data);
@@ -270,11 +270,12 @@ export default function HomeScreen() {
         return;
       }
 
-      // 2. GLOBAL KONTROL: Kullanıcının HERHANGİ bir açık oturumu var mı?
+      // 2. PROJE BAZLI KONTROL: Kullanıcının SADECE BU PROJEDE açık oturumu var mı?
       const { data: activeAttendance } = await supabase
         .from('attendance_records')
         .select('*')
         .eq('worker_id', profile?.id)
+        .eq('project_id', project.id)
         .is('check_out_time', null)
         .maybeSingle();
 
@@ -287,11 +288,7 @@ export default function HomeScreen() {
         }
 
         if (scanType === 'out') {
-          // Doğru projede mi çıkış yapıyor?
-          if (activeAttendance.project_id !== project.id) {
-            handleError('Başka bir projede aktif girişiniz var. O projeden çıkış yapmalısınız.');
-            return;
-          }
+          // Proje ID kontrolü query'de yapıldığı için buraya gelen kayıt kesinlikle bu projeye aittir.
 
           // Konum Doğrulama
           const locationResult = await verifyLocation(project);
@@ -692,7 +689,10 @@ export default function HomeScreen() {
     <View style={styles.container}>
       <View style={styles.header}>
         <View>
-          <Text style={styles.headerTitle}>Greenco</Text>
+          <Text style={styles.headerTitle}>
+            <Text style={{ color: '#2477AD' }}>KADRO</Text>
+            <Text style={{ color: '#1B96D1' }}>360</Text>
+          </Text>
           <Text style={styles.headerSub}>İş Gücü & Teknik Çözümler</Text>
         </View>
         <TouchableOpacity

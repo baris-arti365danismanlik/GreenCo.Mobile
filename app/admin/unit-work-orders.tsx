@@ -1,7 +1,7 @@
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, RefreshControl, Modal, TextInput, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { ArrowLeft, Clock, CheckCircle, XCircle, DollarSign, FileText, X } from 'lucide-react-native';
+import { ArrowLeft, Clock, CheckCircle, XCircle, DollarSign, FileText, X, Search } from 'lucide-react-native';
 import { COLORS } from '@/constants/theme';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
@@ -15,6 +15,7 @@ export default function AdminUnitWorkOrdersScreen() {
   const [unitPrice, setUnitPrice] = useState('');
   const [rejectionReason, setRejectionReason] = useState('');
   const [actionType, setActionType] = useState<'approve' | 'reject'>('approve');
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     loadOrders();
@@ -135,6 +136,16 @@ export default function AdminUnitWorkOrdersScreen() {
     });
   };
 
+  const filteredOrders = orders.filter(order => {
+    const query = searchQuery.toLowerCase();
+    return (
+      order.order_number?.toLowerCase().includes(query) ||
+      order.project?.name?.toLowerCase().includes(query) ||
+      order.service_type?.name?.toLowerCase().includes(query) ||
+      order.description?.toLowerCase().includes(query)
+    );
+  });
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
@@ -151,14 +162,26 @@ export default function AdminUnitWorkOrdersScreen() {
           <RefreshControl refreshing={loading} onRefresh={loadOrders} />
         }
       >
-        {orders.length === 0 && !loading && (
+        <View style={styles.searchContainer}>
+          <Search size={20} color={COLORS.textLight} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="İş emri ara (No, Proje, İş Tipi)..."
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
+        </View>
+
+        {filteredOrders.length === 0 && !loading && (
           <View style={styles.emptyState}>
             <FileText size={48} color={COLORS.textLight} />
-            <Text style={styles.emptyText}>Henüz iş emri bulunmuyor</Text>
+            <Text style={styles.emptyText}>
+              {orders.length === 0 ? 'Henüz iş emri bulunmuyor' : 'Arama sonucu bulunamadı'}
+            </Text>
           </View>
         )}
 
-        {orders.map((order) => {
+        {filteredOrders.map((order) => {
           const statusInfo = getStatusBadge(order.status);
           const StatusIcon = statusInfo.icon;
 
@@ -316,6 +339,25 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     color: COLORS.secondary,
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'white',
+    marginVertical: 10,
+    marginTop:-15,
+    marginBottom: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    gap: 8,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 15,
+    color: COLORS.text,
   },
   content: {
     flex: 1,

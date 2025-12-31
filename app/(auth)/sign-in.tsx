@@ -14,7 +14,7 @@ import { Phone, Lock, KeyRound } from 'lucide-react-native';
 import { COLORS } from '@/constants/theme';
 import { InputGroup } from '@/components/InputGroup';
 import { useAuth } from '@/contexts/AuthContext';
-import { GreencoLogo } from '@/components/GreencoLogo';
+import { Kadro360Logo } from '@/components/Kadro360Logo';
 
 export default function SignIn() {
   const router = useRouter();
@@ -91,7 +91,7 @@ export default function SignIn() {
       >
         <View style={styles.content}>
           <View style={styles.logoContainer}>
-            <GreencoLogo size="large" variant="light" />
+            <Kadro360Logo size="large" variant="colored" />
           </View>
 
           {step === 'phone' && (
@@ -207,7 +207,7 @@ export default function SignIn() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.bg,
+    backgroundColor: '#F7F7F7',
   },
   scrollContent: {
     flexGrow: 1,

@@ -1,14 +1,14 @@
 import React from 'react';
 import { View, Text, StyleSheet, ViewStyle, Image } from 'react-native';
 
-interface GreencoLogoProps {
+interface Kadro360LogoProps {
   size?: 'small' | 'medium' | 'large';
-  variant?: 'light' | 'dark'; // variant affects text visibility on dark backgrounds if needed
+  variant?: 'colored' | 'dark'; // variant affects text visibility on dark backgrounds if needed
   style?: ViewStyle;
 }
 
-export function GreencoLogo({ size = 'large', variant = 'light', style }: GreencoLogoProps) {
-  const iconSize = size === 'large' ? 150 : size === 'medium' ? 100 : 64;
+export const Kadro360Logo = ({ size = 'medium', variant = 'colored', style }: Kadro360LogoProps) => {
+  const iconSize = size === 'large' ? 220 : size === 'medium' ? 100 : 64;
   const nameSize = size === 'large' ? 40 : size === 'medium' ? 24 : 16;
 
   // Colors provided by user
@@ -44,7 +44,7 @@ const styles = StyleSheet.create({
   },
   textContainer: {
     flexDirection: 'row',
-    // marginTop: 12,
+    marginTop: -30,
     alignItems: 'center',
   },
   brandName: {

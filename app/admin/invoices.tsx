@@ -7,10 +7,11 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Modal,
+  TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { ArrowLeft, CheckCircle, DollarSign, FileText, Calendar, User, Clock } from 'lucide-react-native';
+import { ArrowLeft, CheckCircle, DollarSign, FileText, Calendar, User, Clock, Search } from 'lucide-react-native';
 import { COLORS } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 
@@ -36,6 +37,7 @@ export default function AdminInvoicesScreen() {
   const [loading, setLoading] = useState(true);
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [detailModalVisible, setDetailModalVisible] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     loadInvoices();
@@ -85,6 +87,17 @@ export default function AdminInvoicesScreen() {
       </View>
 
       <ScrollView style={styles.content}>
+        <View style={styles.searchBox}>
+          <Search size={20} color={COLORS.textLight} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Hakediş No veya Proje Ara..."
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholderTextColor={COLORS.textLight}
+          />
+        </View>
+
         {loading ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color={COLORS.primary} />
@@ -96,63 +109,68 @@ export default function AdminInvoicesScreen() {
             <Text style={styles.emptyText}>Henüz hakediş kaydı yok</Text>
           </View>
         ) : (
-          invoices.map((invoice) => (
-            <TouchableOpacity
-              key={invoice.id}
-              style={styles.invoiceCard}
-              onPress={() => showDetail(invoice)}
-            >
-              <View style={styles.invoiceHeader}>
-                <View>
-                  <Text style={styles.invoiceNumber}>{invoice.invoice_number}</Text>
-                  <View style={styles.statusBadge}>
-                    <CheckCircle size={14} color={COLORS.success} />
-                    <Text style={styles.statusText}>Faturalandırmaya Hazır</Text>
+          invoices
+            .filter(inv =>
+              inv.invoice_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
+              inv.project?.name.toLowerCase().includes(searchQuery.toLowerCase())
+            )
+            .map((invoice) => (
+              <TouchableOpacity
+                key={invoice.id}
+                style={styles.invoiceCard}
+                onPress={() => showDetail(invoice)}
+              >
+                <View style={styles.invoiceHeader}>
+                  <View>
+                    <Text style={styles.invoiceNumber}>{invoice.invoice_number}</Text>
+                    <View style={styles.statusBadge}>
+                      <CheckCircle size={14} color={COLORS.success} />
+                      <Text style={styles.statusText}>Faturalandırmaya Hazır</Text>
+                    </View>
                   </View>
                 </View>
-              </View>
 
-              <Text style={styles.projectName}>{invoice.project?.name || 'Proje'}</Text>
+                <Text style={styles.projectName}>{invoice.project?.name || 'Proje'}</Text>
 
-              <View style={styles.invoiceDateRow}>
-                <Calendar size={14} color={COLORS.textLight} />
-                <Text style={styles.invoiceDate}>
-                  {new Date(invoice.period_start).toLocaleDateString('tr-TR')} -{' '}
-                  {new Date(invoice.period_end).toLocaleDateString('tr-TR')}
-                </Text>
-              </View>
-
-              <View style={styles.invoiceStats}>
-                <View style={styles.statItem}>
-                  <Clock size={16} color={COLORS.textLight} />
-                  <Text style={styles.statText}>{invoice.total_hours}h</Text>
+                <View style={styles.invoiceDateRow}>
+                  <Calendar size={14} color={COLORS.textLight} />
+                  <Text style={styles.invoiceDate}>
+                    {new Date(invoice.period_start).toLocaleDateString('tr-TR')} -{' '}
+                    {new Date(invoice.period_end).toLocaleDateString('tr-TR')}
+                  </Text>
                 </View>
-                <View style={styles.statItem}>
-                  <User size={16} color={COLORS.textLight} />
-                  <Text style={styles.statText}>{invoice.total_personnel} kişi</Text>
-                </View>
-                <View style={styles.statItem}>
-                  <DollarSign size={16} color={COLORS.success} />
-                  {invoice.personnel_breakdown?.some((p: any) => p.adjusted_amount) ? (
-                    <View style={styles.amountColumn}>
-                      <Text style={[styles.statText, styles.strikethroughCardAmount]}>
-                        {invoice.personnel_breakdown?.reduce((sum: number, p: any) =>
-                          sum + (p.original_amount || p.total_amount), 0
-                        ).toLocaleString('tr-TR')} ₺
-                      </Text>
+
+                <View style={styles.invoiceStats}>
+                  <View style={styles.statItem}>
+                    <Clock size={16} color={COLORS.textLight} />
+                    <Text style={styles.statText}>{invoice.total_hours}h</Text>
+                  </View>
+                  <View style={styles.statItem}>
+                    <User size={16} color={COLORS.textLight} />
+                    <Text style={styles.statText}>{invoice.total_personnel} kişi</Text>
+                  </View>
+                  <View style={styles.statItem}>
+                    <DollarSign size={16} color={COLORS.success} />
+                    {invoice.personnel_breakdown?.some((p: any) => p.adjusted_amount) ? (
+                      <View style={styles.amountColumn}>
+                        <Text style={[styles.statText, styles.strikethroughCardAmount]}>
+                          {invoice.personnel_breakdown?.reduce((sum: number, p: any) =>
+                            sum + (p.original_amount || p.total_amount), 0
+                          ).toLocaleString('tr-TR')} ₺
+                        </Text>
+                        <Text style={[styles.statText, { color: COLORS.success, fontWeight: '700' }]}>
+                          {invoice.total_amount.toLocaleString('tr-TR')} ₺
+                        </Text>
+                      </View>
+                    ) : (
                       <Text style={[styles.statText, { color: COLORS.success, fontWeight: '700' }]}>
                         {invoice.total_amount.toLocaleString('tr-TR')} ₺
                       </Text>
-                    </View>
-                  ) : (
-                    <Text style={[styles.statText, { color: COLORS.success, fontWeight: '700' }]}>
-                      {invoice.total_amount.toLocaleString('tr-TR')} ₺
-                    </Text>
-                  )}
+                    )}
+                  </View>
                 </View>
-              </View>
-            </TouchableOpacity>
-          ))
+              </TouchableOpacity>
+            ))
         )}
       </ScrollView>
 
@@ -302,6 +320,22 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     padding: 16,
+  },
+  searchBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'white',
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 15,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  searchInput: {
+    flex: 1,
+    marginLeft: 10,
+    fontSize: 15,
+    color: COLORS.text,
   },
   loadingContainer: {
     justifyContent: 'center',

@@ -6,7 +6,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'expo-router';
-import { GreencoLogo } from './GreencoLogo';
+import { Kadro360Logo } from './Kadro360Logo';
 
 type DashboardStats = {
   totalApprovedInvoices: number;
@@ -137,7 +137,10 @@ export default function OperationsDashboard() {
     >
       <View style={styles.header}>
         <View style={styles.logoWrapper}>
-          <GreencoLogo size="small" variant="light" />
+          <Text style={styles.name}>
+            <Text style={{ color: '#2477AD', fontWeight: '900' }}>KADRO</Text>
+            <Text style={{ color: '#1B96D1', fontWeight: '900' }}>360</Text>
+          </Text>
         </View>
         <Text style={styles.greeting}>Merhaba,</Text>
         <Text style={styles.name}>{profile?.full_name}</Text>

@@ -11,8 +11,9 @@ import {
 import { useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { COLORS } from '@/constants/theme';
-import { ArrowLeft, FileText, Clock, CheckCircle, AlertCircle, Users, DollarSign, MessageSquare, Stethoscope } from 'lucide-react-native';
+import { ArrowLeft, FileText, Clock, CheckCircle, AlertCircle, Users, DollarSign, MessageSquare, Stethoscope, Search } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { TextInput } from 'react-native';
 
 type Request = {
   id: string;
@@ -85,6 +86,7 @@ export default function TechnicalRequests() {
   const [requests, setRequests] = useState<Request[]>([]);
   const [filter, setFilter] = useState<string>('all');
   const [isAdmin, setIsAdmin] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     // Safety check: specific role redirection
@@ -180,9 +182,18 @@ export default function TechnicalRequests() {
     }
   };
 
-  const filteredRequests = filter === 'all'
-    ? requests
-    : requests.filter((r) => r.status === filter);
+  const filteredRequests = requests.filter((r) => {
+    const matchesFilter = filter === 'all' || r.status === filter;
+    const searchLower = searchQuery.toLowerCase();
+    const matchesSearch =
+      r.title?.toLowerCase().includes(searchLower) ||
+      r.companies?.name?.toLowerCase().includes(searchLower) ||
+      r.technical_service_types?.name?.toLowerCase().includes(searchLower) ||
+      r.location_city?.toLowerCase().includes(searchLower) ||
+      r.location_district?.toLowerCase().includes(searchLower);
+
+    return matchesFilter && matchesSearch;
+  });
 
   const getStatusConfig = (status: string) => {
     return STATUS_CONFIG[status] || STATUS_CONFIG.pending_review;
@@ -195,6 +206,16 @@ export default function TechnicalRequests() {
           <ArrowLeft size={24} color={COLORS.secondary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Tüm Talepler</Text>
+      </View>
+
+      <View style={styles.searchContainer}>
+        <Search size={20} color={COLORS.textLight} />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Talep, firma veya lokasyon ara..."
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+        />
       </View>
 
       <View style={styles.filterContainer}>
@@ -370,6 +391,24 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
     paddingVertical: 12,
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'white',
+    margin: 16,
+    marginBottom: 0,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    gap: 8,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 15,
+    color: COLORS.text,
   },
   filterScroll: {
     paddingHorizontal: 16,

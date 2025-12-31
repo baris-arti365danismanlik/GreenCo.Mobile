@@ -4,7 +4,7 @@ import { useRouter } from 'expo-router';
 import { Users, Wrench, ChevronRight, User } from 'lucide-react-native';
 import { COLORS } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
-import { GreencoLogo } from '@/components/GreencoLogo';
+import { Kadro360Logo } from '@/components/Kadro360Logo';
 import React from 'react';
 
 type ServiceModule = {
@@ -62,7 +62,10 @@ export default function ManagerModuleSelect() {
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
         <View style={styles.headerLeft}>
-          <GreencoLogo size="small" variant="light" />
+          <Text style={{ fontSize: 24, fontWeight: '700' }}>
+            <Text style={{ color: '#2477AD' }}>KADRO</Text>
+            <Text style={{ color: '#1B96D1' }}>360</Text>
+          </Text>
         </View>
         <TouchableOpacity
           style={styles.profileButton}

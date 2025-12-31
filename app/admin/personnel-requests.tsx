@@ -65,7 +65,7 @@ export default function AdminPersonnelRequestsScreen() {
           .from('personnel_requests')
           .select(`
             *,
-            requester:profiles!personnel_requests_requested_by_fkey(full_name)
+            requester:profiles!personnel_requests_requested_by_fkey(full_name, company_id)
           `)
           .order('created_at', { ascending: false }),
         supabase
@@ -97,6 +97,21 @@ export default function AdminPersonnelRequestsScreen() {
 
     if (!confirmed) return;
 
+
+    // Talep eden kişinin şirket bilgisini al
+    // Supabase query'sinden gelen veri array olabilir, bunu kontrol et
+    const requesterData = request.requester;
+    const requesterCompanyId = Array.isArray(requesterData)
+      ? requesterData[0]?.company_id
+      : (requesterData as any)?.company_id;
+
+    if (!requesterCompanyId) {
+      if (Platform.OS === 'web') {
+        window.alert('Hata: Talep eden kullanıcının şirket bilgisi bulunamadı.');
+      }
+      return;
+    }
+
     setProcessingApproval(true);
     try {
       let projectId = request.project_id;
@@ -126,6 +141,7 @@ export default function AdminPersonnelRequestsScreen() {
               start_date: request.project_start_date,
               end_date: request.project_end_date,
               is_active: true,
+              company_id: requesterCompanyId, // Şirket ID'si eklendi
             })
             .select()
             .single();
@@ -168,6 +184,7 @@ export default function AdminPersonnelRequestsScreen() {
               password: request.manager_data.password,
               full_name: request.manager_data.full_name,
               role: 'project_manager',
+              company_id: requesterCompanyId, // Şirket ID'sini API'ye gönderiyoruz
               service_modules: ['personnel'],
             }),
           });
@@ -180,6 +197,48 @@ export default function AdminPersonnelRequestsScreen() {
 
           managerId = result.user_id;
           createdNewManager = true;
+
+          // Yeni oluşturulan yöneticinin şirketini güncelle (Edge function desteklememe ihtimaline karşı)
+          // Yeni oluşturulan yöneticinin şirketini güncelle (Edge function desteklememe ihtimaline karşı)
+          if (managerId) {
+            // Profil oluşturma trigger'ı bazen edge function'dan sonra çalışabilir
+            // Bu yüzden profil oluşana kadar (veya timeout) deneyeceğiz
+            let profileUpdated = false;
+            let retryCount = 0;
+            const maxRetries = 10;
+
+            while (!profileUpdated && retryCount < maxRetries) {
+              console.log(`Profil güncelleme denemesi ${retryCount + 1}/${maxRetries}...`);
+
+              const { data, error: profileUpdateError } = await supabase
+                .from('profiles')
+                .update({
+                  company_id: requesterCompanyId,
+                  // Rol de bazen trigger ile sıfırlanabilir, tekrar set edelim
+                  role: 'project_manager'
+                })
+                .eq('id', managerId)
+                .select();
+
+              if (profileUpdateError) {
+                console.error('Profil güncelleme hatası (company_id):', profileUpdateError);
+                throw new Error('Proje yöneticisi oluşturuldu ancak şirket bilgisi güncellenemedi: ' + profileUpdateError.message);
+              }
+
+              if (data && data.length > 0) {
+                console.log('Profil başarıyla güncellendi:', data[0]);
+                profileUpdated = true;
+              } else {
+                console.log('Profil henüz oluşmadı, bekleniyor...');
+                await new Promise(resolve => setTimeout(resolve, 1000)); // 1 saniye bekle
+                retryCount++;
+              }
+            }
+
+            if (!profileUpdated) {
+              throw new Error('Proje yöneticisi profili oluşturulamadı (Zaman aşımı). Lütfen sistem yöneticisine başvurun.');
+            }
+          }
         }
       }
 

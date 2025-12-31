@@ -53,11 +53,19 @@ export default function UsersManagement() {
   console.log('UsersManagement component rendered');
   const router = useRouter();
 
-  const showAlert = (title: string, message: string) => {
+  const showAlert = (title: string, message: string, buttons?: any[]) => {
     if (Platform.OS === 'web') {
-      window.alert(`${title}\n\n${message}`);
+      if (buttons && buttons.length > 0) {
+        // Simple confirm for web doesn't map 1:1 to Alert buttons, but we can approximate
+        const confirmBtn = buttons.find(b => b.style !== 'cancel');
+        if (confirmBtn && window.confirm(message)) {
+          confirmBtn.onPress && confirmBtn.onPress();
+        }
+      } else {
+        window.alert(`${title}\n\n${message}`);
+      }
     } else {
-      showAlert(title, message);
+      Alert.alert(title, message, buttons);
     }
   };
   const [users, setUsers] = useState<UserProfile[]>([]);
@@ -122,8 +130,11 @@ export default function UsersManagement() {
     if (formData.company_id) {
       const filtered = allProjects.filter(p => (p as any).company_id === formData.company_id);
       setProjects(filtered);
-      // Firma değiştiğinde seçili projeleri temizle
-      setFormData(prev => ({ ...prev, project_ids: [] }));
+      // Firma değiştiğinde seçili projeleri temizle, ancak mevcut ve geçerli olanları koru
+      setFormData(prev => ({
+        ...prev,
+        project_ids: prev.project_ids.filter(id => filtered.some(p => p.id === id))
+      }));
     } else {
       setProjects([]);
     }
@@ -153,8 +164,10 @@ export default function UsersManagement() {
 
       let query = supabase
         .from('profiles')
-        .select('id, full_name, phone, role, company_id, is_active, avatar_url, created_at, city, district, tc_identity_no, birth_date, service_modules, company:companies(name)', { count: 'exact' })
+        .select('id, full_name, phone, role, company_id, is_active, avatar_url, created_at, city, district, tc_identity_no, birth_date, service_modules, company:companies(name, is_active, deleted_at)', { count: 'exact' })
         .is('technical_company_id', null)
+        .neq('role', 'technical_company') // Teknisyen firmalarını bu listede gösterme
+        .eq('is_active', true) // Sadece aktif kullanıcıları getir
         .order('created_at', { ascending: false });
 
       if (!searchQuery.trim()) {
@@ -168,7 +181,10 @@ export default function UsersManagement() {
       if (usersError) throw usersError;
 
       const [companiesRes, projectsRes] = await Promise.all([
-        supabase.from('companies').select('id, name').eq('is_active', true).eq('is_tech_service_company', false),
+        supabase.from('companies').select('id, name, is_active, deleted_at')
+          .eq('is_active', true)
+          .is('deleted_at', null)
+          .eq('is_tech_service_company', false),
         supabase.from('projects_greenco').select('id, name, company_id').eq('is_active', true).not('company_id', 'is', null).order('name'),
       ]);
 
@@ -178,9 +194,34 @@ export default function UsersManagement() {
         console.error('Users Management: Error loading companies:', companiesRes.error);
       }
 
-      setUsers(allUsers || []);
+      // Kullanıcı listesi formatlama + Silinmiş firmaya ait kullanıcıları gizleme
+      const formattedUsers = (allUsers || [])
+        .map((user: any) => ({
+          ...user,
+          company: Array.isArray(user.company) ? user.company[0] : user.company
+        }))
+        .filter((user: any) => {
+          // Eğer kullanıcının firması varsa ve o firma silinmişse/pasifse kullanıcıyı lisede gösterme
+          if (user.company) {
+            if (user.company.deleted_at || user.company.is_active === false) {
+              return false;
+            }
+          }
+          return true;
+        });
+
+      setUsers(formattedUsers);
       setTotalCount(count || 0);
-      if (companiesRes.data) setCompanies(companiesRes.data);
+
+      if (companiesRes.data) {
+        // İstemci tarafında da sıkı filtreleme
+        const validCompanies = companiesRes.data.filter((c: any) => {
+          if (c.deleted_at) return false;
+          if (c.is_active === false) return false;
+          return true;
+        });
+        setCompanies(validCompanies);
+      }
       if (projectsRes.data) setAllProjects(projectsRes.data);
     } catch (error) {
       console.error('Users Management: Exception:', error);
@@ -389,6 +430,19 @@ export default function UsersManagement() {
         showAlert('Hata', 'Personel için doğum tarihi zorunludur');
         return;
       }
+
+      const birthDate = new Date(formData.birth_date);
+      const today = new Date();
+      let age = today.getFullYear() - birthDate.getFullYear();
+      const m = today.getMonth() - birthDate.getMonth();
+      if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+        age--;
+      }
+
+      if (age < 18) {
+        showAlert('Hata', 'Personel 18 yaşından küçük olamaz.');
+        return;
+      }
       if (!formData.avatar_url) {
         showAlert('Hata', 'Personel için profil fotoğrafı zorunludur');
         return;
@@ -399,7 +453,45 @@ export default function UsersManagement() {
       }
     }
 
-    console.log('Validation passed, creating user...');
+    console.log('Validation passed, checking for duplicates...');
+
+    // PRE-CHECK: Duplicate Validation
+    if (!editingUser) {
+      setLoading(true);
+      const formattedPhone = formData.phone.startsWith('+') ? formData.phone : `+90${formData.phone}`;
+      const email = `${formData.phone.replace('+', '')}@greenco.app`;
+
+      // 1. Check Phone in Profiles
+      const { data: phoneCheck } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('phone', formattedPhone)
+        .maybeSingle();
+
+      if (phoneCheck) {
+        setLoading(false);
+        showAlert('Hata', 'Bu telefon numarası zaten kullanımda.');
+        return;
+      }
+
+      // 2. Check TC Identity No (if personnel)
+      if (formData.role === 'personnel' && formData.tc_identity_no) {
+        const { data: tcCheck } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('tc_identity_no', formData.tc_identity_no)
+          .maybeSingle();
+
+        if (tcCheck) {
+          setLoading(false);
+          showAlert('Hata', 'Bu TC Kimlik No zaten kullanımda.');
+          return;
+        }
+      }
+      setLoading(false);
+    }
+
+    console.log('Pre-check passed, creating user...');
     try {
       if (editingUser) {
         const updateData: any = {
@@ -571,7 +663,35 @@ export default function UsersManagement() {
       closeModal();
     } catch (error: any) {
       console.error('Error in handleSave:', error);
-      showAlert('Hata', error.message || 'İşlem başarısız');
+
+      let errorMessage = 'İşlem başarısız';
+      const rawError = error.message || '';
+
+      if (rawError.includes('birth_date_min_age')) {
+        errorMessage = 'Personel 18 yaşından küçük olamaz.';
+      } else if (rawError.includes('unique constraint') || rawError.includes('already exists')) {
+        if (rawError.includes('phone')) {
+          errorMessage = 'Bu telefon numarası sistemde zaten kayıtlı.';
+        } else if (rawError.includes('email')) {
+          errorMessage = 'Bu e-posta adresi sistemde zaten kayıtlı.';
+        } else if (rawError.includes('tc_identity_no')) {
+          errorMessage = 'Bu TC Kimlik No sistemde zaten kayıtlı.';
+        } else {
+          errorMessage = 'Bu kayıt sistemde zaten mevcut.';
+        }
+      } else if (rawError.includes('auth/email-already-in-use') || rawError.includes('email address has already been registered')) {
+        errorMessage = 'Bu e-posta adresi zaten kullanımda.';
+      } else if (rawError.includes('auth/invalid-email')) {
+        errorMessage = 'Geçersiz e-posta adresi.';
+      } else if (rawError.includes('auth/weak-password') || rawError.includes('Password should be at least')) {
+        errorMessage = 'Şifre çok zayıf. En az 6 karakter olmalı.';
+      } else if (rawError.includes('phone number already exists')) {
+        errorMessage = 'Bu telefon numarası sistemde zaten kayıtlı.';
+      } else {
+        errorMessage = rawError;
+      }
+
+      showAlert('Hata', errorMessage);
     }
   };
 

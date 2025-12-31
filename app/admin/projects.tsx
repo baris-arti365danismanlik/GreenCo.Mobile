@@ -38,6 +38,7 @@ export default function AdminProjects() {
   const [qrProject, setQrProject] = useState<Project | null>(null);
   const [availableManagers, setAvailableManagers] = useState<Manager[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [projectSearchQuery, setProjectSearchQuery] = useState('');
   const [generatingQR, setGeneratingQR] = useState(false);
   const [confirmModalVisible, setConfirmModalVisible] = useState(false);
   const [deleteConfirmVisible, setDeleteConfirmVisible] = useState(false);
@@ -403,6 +404,10 @@ export default function AdminProjects() {
     manager.phone.includes(searchQuery)
   );
 
+  const filteredProjects = projects.filter(project =>
+    project.name.toLowerCase().includes(projectSearchQuery.toLowerCase())
+  );
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
@@ -414,15 +419,27 @@ export default function AdminProjects() {
       </View>
 
       <ScrollView style={styles.content}>
+        <View style={styles.searchContainer}>
+          <Search size={20} color={COLORS.textLight} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Proje ara..."
+            value={projectSearchQuery}
+            onChangeText={setProjectSearchQuery}
+          />
+        </View>
+
         {loading ? (
           <Text style={styles.loadingText}>Yükleniyor...</Text>
-        ) : projects.length === 0 ? (
+        ) : filteredProjects.length === 0 ? (
           <View style={styles.emptyState}>
             <Building2 size={48} color={COLORS.textLight} />
-            <Text style={styles.emptyText}>Henüz proje bulunmuyor</Text>
+            <Text style={styles.emptyText}>
+              {projects.length === 0 ? 'Henüz proje bulunmuyor' : 'Arama sonucu bulunamadı'}
+            </Text>
           </View>
         ) : (
-          projects.map((project) => (
+          filteredProjects.map((project) => (
             <View key={project.id} style={styles.projectCard}>
               <View style={styles.projectHeader}>
                 <View style={{ flex: 1 }}>
@@ -858,12 +875,14 @@ const styles = StyleSheet.create({
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.bg,
-    margin: 16,
+    backgroundColor: 'white',
+    // margin: 16,
     marginBottom: 8,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    borderRadius: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLORS.border,
     gap: 8,
   },
   searchInput: {

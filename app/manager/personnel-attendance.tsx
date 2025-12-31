@@ -22,11 +22,17 @@ type AttendanceRecord = {
   id: string;
   check_in_time: string;
   check_out_time?: string;
-  shift_date: string;
   total_hours?: number;
   status: 'complete' | 'incomplete' | 'no_checkout';
   performance_rating?: number;
   performance_notes?: string;
+};
+
+type GroupedAttendance = {
+  date: string; // YYYY-MM-DD
+  total_hours: number;
+  status: 'complete' | 'incomplete' | 'no_checkout'; // Day status (worst case of records)
+  records: AttendanceRecord[];
 };
 
 type PersonnelInfo = {
@@ -59,7 +65,7 @@ export default function ManagerPersonnelAttendanceScreen() {
 
   const [personnel, setPersonnel] = useState<PersonnelInfo | null>(null);
   const [currentMonth, setCurrentMonth] = useState(new Date());
-  const [attendanceData, setAttendanceData] = useState<AttendanceRecord[]>([]);
+  const [groupedData, setGroupedData] = useState<GroupedAttendance[]>([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<MonthStats>({
     totalDays: 0,
@@ -73,26 +79,27 @@ export default function ManagerPersonnelAttendanceScreen() {
   const [notes, setNotes] = useState('');
 
   useEffect(() => {
-    console.log('useEffect - personnelId:', personnelId);
     if (personnelId) {
       loadPersonnelInfo();
-    } else {
-      console.log('personnelId yok!');
     }
   }, [personnelId]);
 
   useEffect(() => {
     if (personnelId) {
-      loadAttendanceData();
+      loadData();
     }
-  }, [personnelId, currentMonth, projectId]);
+  }, [personnelId, projectId, currentMonth]);
 
-  useEffect(() => {
-    console.log('personnel state güncellendi:', personnel);
-  }, [personnel]);
+  const loadData = async () => {
+    setLoading(true);
+    if (!personnel) {
+      await loadPersonnelInfo();
+    }
+    await loadAttendanceData();
+    setLoading(false);
+  };
 
   const loadPersonnelInfo = async () => {
-    console.log('loadPersonnelInfo başladı - personnelId:', personnelId);
     try {
       const { data, error } = await supabase
         .from('profiles')
@@ -107,23 +114,21 @@ export default function ManagerPersonnelAttendanceScreen() {
         .eq('id', personnelId)
         .maybeSingle();
 
-      console.log('Supabase response - data:', data, 'error:', error);
-
       if (error) throw error;
 
       if (data) {
         const now = new Date();
         const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
+        // Check if ANY active record exists for this project today
         const { data: todayAttendance } = await supabase
           .from('attendance_records')
           .select('check_in_time, check_out_time')
           .eq('worker_id', personnelId)
           .eq('project_id', projectId)
-          .gte('check_in_time', todayStart.toISOString())
-          .maybeSingle();
+          .gte('check_in_time', todayStart.toISOString());
 
-        const isWorking = todayAttendance && todayAttendance.check_in_time && !todayAttendance.check_out_time;
+        const isWorking = todayAttendance?.some(r => r.check_in_time && !r.check_out_time) || false;
 
         const personnelData = {
           id: data.id,
@@ -132,10 +137,7 @@ export default function ManagerPersonnelAttendanceScreen() {
           personnel_type: (data.personnel_types as any)?.name || undefined,
           isWorking: isWorking,
         };
-        console.log('Personnel data loaded:', personnelData);
         setPersonnel(personnelData);
-      } else {
-        console.log('Data gelmedi - personnel bulunamadı');
       }
     } catch (error) {
       console.error('Error loading personnel:', error);
@@ -143,7 +145,6 @@ export default function ManagerPersonnelAttendanceScreen() {
   };
 
   const loadAttendanceData = async () => {
-    setLoading(true);
     try {
       const startOfMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
       const endOfMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0);
@@ -160,19 +161,21 @@ export default function ManagerPersonnelAttendanceScreen() {
         .lt('check_in_time', endDate)
         .order('check_in_time', { ascending: true });
 
-      if (attendanceError) {
-        console.error('Attendance error:', attendanceError);
-        throw attendanceError;
-      }
+      if (attendanceError) throw attendanceError;
 
       if (!attendanceRecords || attendanceRecords.length === 0) {
-        setAttendanceData([]);
+        setGroupedData([]);
         setStats({ totalDays: 0, avgHours: 0, totalOvertime: 0, totalUndertime: 0 });
-        setLoading(false);
         return;
       }
 
-      const processedData: AttendanceRecord[] = attendanceRecords.map(attendance => {
+      // GROUP BY DATE LOGIC
+      const groups: { [date: string]: GroupedAttendance } = {};
+
+      attendanceRecords.forEach(attendance => {
+        const checkInDate = new Date(attendance.check_in_time);
+        const dateKey = checkInDate.toISOString().split('T')[0];
+
         let totalHours = 0;
         let status: 'complete' | 'incomplete' | 'no_checkout' = 'incomplete';
 
@@ -185,44 +188,67 @@ export default function ManagerPersonnelAttendanceScreen() {
           status = 'no_checkout';
         }
 
-        const shiftDate = new Date(attendance.check_in_time);
-        const dateString = shiftDate.toISOString().split('T')[0];
-
-        return {
+        const record: AttendanceRecord = {
           id: attendance.id,
           check_in_time: attendance.check_in_time || '',
           check_out_time: attendance.check_out_time,
-          shift_date: dateString,
           total_hours: totalHours,
           status,
           performance_rating: attendance.performance_rating,
           performance_notes: attendance.performance_notes,
         };
+
+        if (!groups[dateKey]) {
+          groups[dateKey] = {
+            date: dateKey,
+            total_hours: 0,
+            status: 'complete', // Start optimistic, downgrade if we find incomplete records
+            records: [],
+          };
+        }
+
+        groups[dateKey].records.push(record);
+        groups[dateKey].total_hours += totalHours;
+
+        // Downgrade status logic: no_checkout > incomplete > complete
+        // If there is ANY active record, day status is no_checkout
+        if (status === 'no_checkout') {
+          groups[dateKey].status = 'no_checkout';
+        } else if (status === 'incomplete' && groups[dateKey].status !== 'no_checkout') {
+          groups[dateKey].status = 'incomplete';
+        }
       });
 
-      setAttendanceData(processedData);
-      calculateStats(processedData);
+      const groupedArray = Object.values(groups).sort((a, b) => b.date.localeCompare(a.date));
+
+      setGroupedData(groupedArray);
+      calculateStats(groupedArray);
     } catch (error) {
       console.error('Error loading attendance:', error);
-    } finally {
-      setLoading(false);
     }
   };
 
-  const calculateStats = (data: AttendanceRecord[]) => {
-    const completeDays = data.filter(d => d.status === 'complete');
-    const totalDays = completeDays.length;
-    const totalHours = completeDays.reduce((sum, d) => sum + (d.total_hours || 0), 0);
+  const calculateStats = (data: GroupedAttendance[]) => {
+    // Only count days where at least one shift is complete or waiting (no_checkout still counts as active day)
+    const workingDays = data.filter(d => d.records.length > 0);
+    const totalDays = workingDays.length;
+
+    // Sum all hours from all days
+    const totalHours = workingDays.reduce((sum, d) => sum + d.total_hours, 0);
+
     const avgHours = totalDays > 0 ? totalHours / totalDays : 0;
 
     let totalOvertime = 0;
     let totalUndertime = 0;
 
-    completeDays.forEach(day => {
+    workingDays.forEach(day => {
+      // Calculate daily overtime/undertime based on the DAY's total
       const hours = day.total_hours || 0;
       if (hours > 8) {
         totalOvertime += hours - 8;
-      } else if (hours < 8) {
+      } else if (hours < 8 && day.status !== 'no_checkout') {
+        // Only count undertime if the day is fully closed. 
+        // If they are still checked in (no_checkout), don't count logical undertime yet.
         totalUndertime += 8 - hours;
       }
     });
@@ -257,31 +283,31 @@ export default function ManagerPersonnelAttendanceScreen() {
     return `${date.getDate()} ${MONTH_NAMES[date.getMonth()].slice(0, 3)} ${dayNames[date.getDay()]}`;
   };
 
-  const getDayCardStyle = (record: AttendanceRecord) => {
-    if (record.status === 'incomplete') {
+  const getDayCardStyle = (group: GroupedAttendance) => {
+    if (group.status === 'incomplete') {
       return { backgroundColor: '#fee2e2', borderColor: '#dc2626' };
     }
-    if (record.status === 'no_checkout') {
+    if (group.status === 'no_checkout') {
       return { backgroundColor: '#fed7aa', borderColor: '#ea580c' };
     }
-    const hours = record.total_hours || 0;
+    const hours = group.total_hours || 0;
     if (hours < 7) {
-      return { backgroundColor: '#fed7aa', borderColor: '#ea580c' };
+      return { backgroundColor: '#fed7aa', borderColor: '#ea580c' }; // Yellow/Orange for undertime
     }
     if (hours > 9) {
-      return { backgroundColor: '#fef3c7', borderColor: '#f59e0b' };
+      return { backgroundColor: '#fef3c7', borderColor: '#f59e0b' }; // Yellow for overtime
     }
-    return { backgroundColor: '#dcfce7', borderColor: '#16a34a' };
+    return { backgroundColor: '#dcfce7', borderColor: '#16a34a' }; // Green for standard
   };
 
-  const getDayIcon = (record: AttendanceRecord) => {
-    if (record.status === 'incomplete') {
+  const getDayIcon = (group: GroupedAttendance) => {
+    if (group.status === 'incomplete') {
       return <XCircle size={20} color="#dc2626" />;
     }
-    if (record.status === 'no_checkout') {
+    if (group.status === 'no_checkout') {
       return <AlertCircle size={20} color="#ea580c" />;
     }
-    const hours = record.total_hours || 0;
+    const hours = group.total_hours || 0;
     if (hours < 7 || hours > 9) {
       return <AlertCircle size={20} color="#f59e0b" />;
     }
@@ -289,8 +315,14 @@ export default function ManagerPersonnelAttendanceScreen() {
   };
 
   const formatHours = (hours: number) => {
-    const h = Math.floor(hours);
-    const m = Math.round((hours - h) * 60);
+    let h = Math.floor(hours);
+    let m = Math.round((hours - h) * 60);
+
+    if (m === 60) {
+      h += 1;
+      m = 0;
+    }
+
     return `${h}s ${m}dk`;
   };
 
@@ -321,7 +353,6 @@ export default function ManagerPersonnelAttendanceScreen() {
       await loadAttendanceData();
       setRatingModalVisible(false);
 
-      // Timesheet detail sayfasına geri dönüyorsa refresh trigger ile
       if (returnTo === 'timesheet-detail' && timesheetId) {
         setTimeout(() => {
           router.push(`/manager/timesheet-detail?id=${timesheetId}&refresh=${Date.now()}`);
@@ -427,26 +458,25 @@ export default function ManagerPersonnelAttendanceScreen() {
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color={COLORS.primary} />
           </View>
-        ) : attendanceData.length === 0 ? (
+        ) : groupedData.length === 0 ? (
           <View style={styles.emptyState}>
             <Calendar size={48} color={COLORS.textLight} />
             <Text style={styles.emptyText}>Bu ay için kayıt bulunmuyor</Text>
           </View>
         ) : (
           <View style={styles.calendarContainer}>
-            {attendanceData.map((record) => (
+            {groupedData.map((group) => (
               <View
-                key={record.id}
-                style={[styles.dayCard, getDayCardStyle(record)]}
+                key={group.date}
+                style={[styles.dayCard, getDayCardStyle(group)]}
               >
-                <View style={styles.dayHeader}>
-                  <Text style={styles.dayDate}>{formatDate(record.shift_date)}</Text>
-                  {getDayIcon(record)}
+                <View style={[styles.dayHeader, { borderBottomWidth: 1, borderBottomColor: 'rgba(0,0,0,0.05)', paddingBottom: 8, marginBottom: 8 }]}>
+                  <Text style={styles.dayDate}>{formatDate(group.date)}</Text>
+                  {getDayIcon(group)}
                 </View>
-                {record.status === 'incomplete' ? (
-                  <Text style={styles.noDataText}>Giriş yapılmadı</Text>
-                ) : (
-                  <>
+
+                {group.records.map((record, index) => (
+                  <View key={record.id} style={{ marginBottom: 8, paddingLeft: 8, borderLeftWidth: 2, borderLeftColor: 'rgba(0,0,0,0.1)' }}>
                     <View style={styles.timeRow}>
                       <Text style={styles.timeLabel}>Giriş:</Text>
                       <Text style={styles.timeValue}>{formatTime(record.check_in_time)}</Text>
@@ -457,116 +487,101 @@ export default function ManagerPersonnelAttendanceScreen() {
                         {record.check_out_time ? formatTime(record.check_out_time) : 'Bekliyor'}
                       </Text>
                     </View>
-                    {record.total_hours && record.total_hours > 0 ? (
-                      <View style={styles.totalRow}>
-                        <Text style={styles.totalLabel}>Toplam:</Text>
-                        <Text style={styles.totalValue}>{formatHours(record.total_hours)}</Text>
+                    {record.status === 'complete' && (record.performance_rating || record.performance_notes) && (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2, gap: 4 }}>
+                        {record.performance_rating && (
+                          <Star size={12} color="#fbbf24" fill="#fbbf24" />
+                        )}
+                        <Text style={{ fontSize: 10, color: COLORS.textLight }}>
+                          {record.performance_notes ? 'Notlu Puanlama' : 'Puanlandı'}
+                        </Text>
                       </View>
-                    ) : null}
-                    {record.status === 'complete' && (
-                      <>
-                        <View style={styles.ratingSection}>
-                          <View style={styles.starsRow}>
-                            {[1, 2, 3, 4, 5].map((star) => (
-                              <Star
-                                key={star}
-                                size={20}
-                                color={record.performance_rating && record.performance_rating >= star ? '#fbbf24' : '#d1d5db'}
-                                fill={record.performance_rating && record.performance_rating >= star ? '#fbbf24' : 'transparent'}
-                              />
-                            ))}
-                          </View>
-                          {record.performance_notes && (
-                            <View style={styles.notesPreview}>
-                              <MessageSquare size={14} color={COLORS.textLight} />
-                              <Text style={styles.notesPreviewText} numberOfLines={1}>
-                                {record.performance_notes}
-                              </Text>
-                            </View>
-                          )}
-                        </View>
-                        <TouchableOpacity
-                          style={styles.rateButton}
-                          onPress={() => openRatingModal(record)}
-                        >
-                          <Star size={16} color="white" />
-                          <Text style={styles.rateButtonText}>
-                            {record.performance_rating ? 'Puanı Düzenle' : 'Puanla'}
-                          </Text>
-                        </TouchableOpacity>
-                      </>
                     )}
-                  </>
-                )}
+
+                    {/* Puanlama Butonu (Sadece tamamlanmış vardiyalar için) */}
+                    {record.status === 'complete' && (
+                      <TouchableOpacity
+                        style={{
+                          marginTop: 4,
+                          backgroundColor: COLORS.primary,
+                          paddingHorizontal: 8,
+                          paddingVertical: 4,
+                          borderRadius: 4,
+                          alignSelf: 'flex-start'
+                        }}
+                        onPress={() => openRatingModal(record)}
+                      >
+                        <Text style={{ color: 'white', fontSize: 10, fontWeight: '600' }}>
+                          {record.performance_rating ? 'Puanı Güncelle' : 'Puanla'}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                ))}
+
+                <View style={styles.totalRow}>
+                  <Text style={styles.totalLabel}>Günlük Toplam:</Text>
+                  <Text style={styles.totalValue}>{formatHours(group.total_hours)}</Text>
+                </View>
+
               </View>
             ))}
           </View>
         )}
       </ScrollView>
 
+      {/* RATING MODAL */}
       <Modal
+        animationType="slide"
+        transparent={true}
         visible={ratingModalVisible}
-        transparent
-        animationType="fade"
         onRequestClose={() => setRatingModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <TouchableOpacity
-            style={styles.modalBackdrop}
-            activeOpacity={1}
-            onPress={() => setRatingModalVisible(false)}
-          />
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Performans Puanlama</Text>
-            <Text style={styles.modalSubtitle}>
-              {selectedRecord && formatDate(selectedRecord.shift_date)}
-            </Text>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Personeli Puanla</Text>
+              <TouchableOpacity onPress={() => setRatingModalVisible(false)}>
+                <XCircle size={24} color={COLORS.text} />
+              </TouchableOpacity>
+            </View>
 
             <View style={styles.starsContainer}>
               {[1, 2, 3, 4, 5].map((star) => (
                 <TouchableOpacity
                   key={star}
                   onPress={() => setRating(star)}
-                  style={styles.starButton}
                 >
                   <Star
                     size={32}
-                    color={rating >= star ? '#fbbf24' : '#d1d5db'}
+                    color={rating >= star ? '#fbbf24' : '#e5e7eb'}
                     fill={rating >= star ? '#fbbf24' : 'transparent'}
                   />
                 </TouchableOpacity>
               ))}
             </View>
 
-            <Text style={styles.inputLabel}>Not (Opsiyonel)</Text>
+            <Text style={{ textAlign: 'center', marginBottom: 16, color: COLORS.textLight }}>
+              {rating === 0 ? 'Puan Seçiniz' : `${rating} Yıldız`}
+            </Text>
+
+            <Text style={styles.inputLabel}>Notlar (İsteğe bağlı)</Text>
             <TextInput
-              style={styles.notesInput}
-              placeholder="Performans hakkında notlarınız..."
-              placeholderTextColor={COLORS.textLight}
-              value={notes}
-              onChangeText={setNotes}
+              style={styles.textInput}
+              placeholder="Performans hakkında notlar..."
               multiline
               numberOfLines={3}
-              maxLength={200}
+              value={notes}
+              onChangeText={setNotes}
             />
 
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.cancelButton]}
-                onPress={() => setRatingModalVisible(false)}
-              >
-                <Text style={styles.cancelButtonText}>İptal</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.saveButton]}
-                onPress={saveRating}
-              >
-                <Text style={styles.saveButtonText}>Kaydet</Text>
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity style={styles.saveButton} onPress={saveRating}>
+              <Text style={styles.saveButtonText}>Kaydet</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
+
     </SafeAreaView>
   );
 }
@@ -738,7 +753,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
   },
   dayDate: {
     fontSize: 14,
@@ -748,7 +762,7 @@ const styles = StyleSheet.create({
   timeRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 6,
+    marginBottom: 2,
   },
   timeLabel: {
     fontSize: 13,
@@ -777,93 +791,34 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: COLORS.primary,
   },
-  noDataText: {
-    fontSize: 13,
-    color: COLORS.textLight,
-    fontStyle: 'italic',
-  },
-  ratingSection: {
-    marginTop: 12,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(0,0,0,0.1)',
-    gap: 8,
-  },
-  starsRow: {
-    flexDirection: 'row',
-    gap: 4,
-  },
-  notesPreview: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: 4,
-  },
-  notesPreviewText: {
-    fontSize: 12,
-    color: COLORS.textLight,
-    flex: 1,
-  },
-  rateButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: COLORS.primary,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    marginTop: 12,
-    gap: 6,
-  },
-  rateButtonText: {
-    color: 'white',
-    fontSize: 14,
-    fontWeight: '600',
-  },
   modalOverlay: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  modalBackdrop: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
     backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    padding: 20,
   },
   modalContent: {
     backgroundColor: 'white',
-    borderRadius: 16,
-    padding: 24,
-    zIndex: 1,
-    width: '100%',
-    maxWidth: 400,
+    borderRadius: 12,
+    padding: 20,
+    maxHeight: '80%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
   },
   modalTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '700',
     color: COLORS.secondary,
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  modalSubtitle: {
-    fontSize: 14,
-    color: COLORS.textLight,
-    textAlign: 'center',
-    marginBottom: 24,
   },
   starsContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
-    gap: 4,
-    marginBottom: 24,
-    flexWrap: 'wrap',
-  },
-  starButton: {
-    padding: 2,
+    gap: 8,
+    marginBottom: 8,
   },
   inputLabel: {
     fontSize: 14,
@@ -871,40 +826,24 @@ const styles = StyleSheet.create({
     color: COLORS.secondary,
     marginBottom: 8,
   },
-  notesInput: {
+  textInput: {
     borderWidth: 1,
     borderColor: COLORS.border,
     borderRadius: 8,
     padding: 12,
-    fontSize: 14,
-    color: COLORS.text,
+    minHeight: 80,
     textAlignVertical: 'top',
-    marginBottom: 24,
-  },
-  modalButtons: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  modalButton: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  cancelButton: {
-    backgroundColor: COLORS.bg,
-  },
-  cancelButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: COLORS.text,
+    marginBottom: 20,
   },
   saveButton: {
     backgroundColor: COLORS.primary,
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
   },
   saveButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
     color: 'white',
+    fontWeight: '700',
+    fontSize: 16,
   },
 });

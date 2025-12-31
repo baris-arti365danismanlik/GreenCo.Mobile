@@ -4,7 +4,7 @@ import { useRouter } from 'expo-router';
 import { ArrowLeft, Users, TrendingUp, CheckCircle, XCircle, Award, Calendar, Package, MapPin, FileText } from 'lucide-react-native';
 import { COLORS } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
-import { GreencoLogo } from '@/components/GreencoLogo';
+import { Kadro360Logo } from '@/components/Kadro360Logo';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 
@@ -487,7 +487,7 @@ export default function ManagerDashboard() {
         </View>
 
         <View style={styles.footer}>
-          <GreencoLogo size="small" variant="light" />
+          <Kadro360Logo size="small" variant="colored" />
         </View>
       </ScrollView>
     </SafeAreaView>

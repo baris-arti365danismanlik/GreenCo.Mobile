@@ -475,7 +475,7 @@ export default function ManagerProfileScreen() {
                         <View style={styles.infoRow}>
                             <View style={styles.infoContent}>
                                 <Text style={styles.infoLabel}>Versiyon</Text>
-                                <Text style={styles.infoValue}>Greenco v1.0.0</Text>
+                                <Text style={styles.infoValue}>Kadro360 v1.0.0</Text>
                             </View>
                         </View>
                         <View style={styles.divider} />
@@ -499,7 +499,7 @@ export default function ManagerProfileScreen() {
 
                 <View style={styles.footer}>
                     <Text style={styles.footerText}>
-                        © 2024 Greenco - Saha Personeli Yönetim Sistemi
+                        © 2024 Kadro360 - Saha Personeli Yönetim Sistemi
                     </Text>
                     <Text style={styles.footerSubtext}>
                         QR Kod ve Geofence Teknolojisi ile %100 Doğrulanmış Takip

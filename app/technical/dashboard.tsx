@@ -305,33 +305,33 @@ export default function TechnicalDashboard() {
               )}
 
               {profile?.role === 'admin' && (
-                <>
-                  <TouchableOpacity
-                    style={styles.actionCard}
-                    onPress={() => router.push('/technical/companies')}
-                  >
-                    <View style={[styles.actionIcon, { backgroundColor: '#e0e7ff' }]}>
-                      <Building2 size={24} color="#6366f1" />
-                    </View>
-                    <View style={styles.actionInfo}>
-                      <Text style={styles.actionTitle}>Teknisyen Şirketleri</Text>
-                      <Text style={styles.actionDesc}>Teknisyen şirketlerini yönet</Text>
-                    </View>
-                  </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.actionCard}
+                  onPress={() => router.push('/technical/companies')}
+                >
+                  <View style={[styles.actionIcon, { backgroundColor: '#e0e7ff' }]}>
+                    <Building2 size={24} color="#6366f1" />
+                  </View>
+                  <View style={styles.actionInfo}>
+                    <Text style={styles.actionTitle}>Teknik Firmalar</Text>
+                    <Text style={styles.actionDesc}>Teknik firmaları yönet</Text>
+                  </View>
+                </TouchableOpacity>
+              )}
 
-                  <TouchableOpacity
-                    style={styles.actionCard}
-                    onPress={() => router.push('/admin/technical-service-invoices')}
-                  >
-                    <View style={[styles.actionIcon, { backgroundColor: '#fef3c7' }]}>
-                      <DollarSign size={24} color="#f59e0b" />
-                    </View>
-                    <View style={styles.actionInfo}>
-                      <Text style={styles.actionTitle}>Teknik Servis Hakedişleri</Text>
-                      <Text style={styles.actionDesc}>Hakediş oluştur ve yönet</Text>
-                    </View>
-                  </TouchableOpacity>
-                </>
+              {profile?.role === 'admin' && (
+                <TouchableOpacity
+                  style={styles.actionCard}
+                  onPress={() => router.push('/admin/technical-service-invoices')}
+                >
+                  <View style={[styles.actionIcon, { backgroundColor: '#fef3c7' }]}>
+                    <DollarSign size={24} color="#f59e0b" />
+                  </View>
+                  <View style={styles.actionInfo}>
+                    <Text style={styles.actionTitle}>Teknik Servis Hakedişleri</Text>
+                    <Text style={styles.actionDesc}>Hakediş oluştur ve yönet</Text>
+                  </View>
+                </TouchableOpacity>
               )}
             </View>
           </>

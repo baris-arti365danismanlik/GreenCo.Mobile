@@ -74,10 +74,18 @@ export function DateRangePicker({
     const startStr = start.toISOString().split('T')[0];
     const endStr = end.toISOString().split('T')[0];
 
-    if (!isDateInRange(startStr, disabledRanges) && !isDateInRange(endStr, disabledRanges)) {
-      onStartDateChange(startStr);
-      onEndDateChange(endStr);
+    onStartDateChange(startStr);
+    onEndDateChange(endStr);
+
+    if (isDateInRange(startStr, disabledRanges)) {
+      setStartError('Bu tarih zaten onaylanmış bir dönemde');
+    } else {
       setStartError('');
+    }
+
+    if (isDateInRange(endStr, disabledRanges)) {
+      setEndError('Bu tarih zaten onaylanmış bir dönemde');
+    } else {
       setEndError('');
     }
   };
@@ -90,10 +98,18 @@ export function DateRangePicker({
     const startStr = start.toISOString().split('T')[0];
     const endStr = end.toISOString().split('T')[0];
 
-    if (!isDateInRange(startStr, disabledRanges) && !isDateInRange(endStr, disabledRanges)) {
-      onStartDateChange(startStr);
-      onEndDateChange(endStr);
+    onStartDateChange(startStr);
+    onEndDateChange(endStr);
+
+    if (isDateInRange(startStr, disabledRanges)) {
+      setStartError('Bu tarih zaten onaylanmış bir dönemde');
+    } else {
       setStartError('');
+    }
+
+    if (isDateInRange(endStr, disabledRanges)) {
+      setEndError('Bu tarih zaten onaylanmış bir dönemde');
+    } else {
       setEndError('');
     }
   };

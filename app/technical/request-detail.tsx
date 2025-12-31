@@ -595,7 +595,7 @@ export default function RequestDetail() {
           <View style={styles.instructionCard}>
             <AlertCircle size={20} color="#3b82f6" />
             <Text style={styles.instructionText}>
-              Greenco teknik ekibimiz sizin için en uygun çözümleri değerlendiriyor. Teklifler hazır olduğunda size bilgi vereceğiz.
+              Kadro360 teknik ekibimiz sizin için en uygun çözümleri değerlendiriyor. Teklifler hazır olduğunda size bilgi vereceğiz.
             </Text>
           </View>
         )}

@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "Greenco Service",
-    "slug": "greenco-service",
+    "name": "KADRO360",
+    "slug": "kadro360-service",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/image.png",
-    "scheme": "greenco",
+    "scheme": "kadro360",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {

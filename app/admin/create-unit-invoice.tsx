@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, TextInput, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, TextInput, ActivityIndicator, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { ArrowLeft, Save } from 'lucide-react-native';
@@ -106,14 +106,19 @@ export default function CreateUnitInvoiceScreen() {
 
       if (updateError) throw updateError;
 
-      Alert.alert('Başarılı', 'Hakediş başarıyla oluşturuldu ve iş emri tamamlandı.', [
-        { text: 'Tamam', onPress: () => router.back() }
-      ]);
+      if (Platform.OS === 'web') {
+        window.alert('Hakediş başarıyla oluşturulmuştur.');
+        router.back();
+      } else {
+        Alert.alert('Başarılı', 'Hakediş başarıyla oluşturulmuştur.', [
+          { text: 'Tamam', onPress: () => router.back() }
+        ]);
+      }
     } catch (error: any) {
       console.error('Hakediş oluşturma hatası:', error);
       Alert.alert('Hata', error.message);
     } finally {
-      if (loading) setLoading(false);
+      setLoading(false);
     }
   };
 

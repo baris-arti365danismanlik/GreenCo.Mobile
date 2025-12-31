@@ -34,6 +34,7 @@ export default function AdminTechnicalRequests() {
   const [loading, setLoading] = useState(true);
   const [requests, setRequests] = useState<Request[]>([]);
 
+
   useEffect(() => {
     loadRequests();
   }, []);
@@ -106,6 +107,8 @@ export default function AdminTechnicalRequests() {
         return <Clock size={16} color={colors.text} />;
     }
   };
+
+
 
   if (loading) {
     return (

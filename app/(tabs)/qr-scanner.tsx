@@ -183,11 +183,13 @@ export default function QRScanner() {
         return;
       }
 
-      // 2. GLOBAL KONTROL: Kullanıcının HERHANGİ bir açık oturumu var mı?
+      // 2. PROJE BAZLI KONTROL: Kullanıcının SADECE BU PROJEDE açık oturumu var mı?
+      // (Diğer projelerdeki oturumlar burayı etkilemez, çoklu proje çalışmasına izin verilir)
       const { data: activeAttendance } = await supabase
         .from('attendance_records')
         .select('*')
         .eq('worker_id', profile?.id)
+        .eq('project_id', project.id)
         .is('check_out_time', null)
         .maybeSingle();
 
@@ -200,11 +202,7 @@ export default function QRScanner() {
         }
 
         if (scanType === 'out') {
-          // Proje Kontrolü
-          if (activeAttendance.project_id !== project.id) {
-            handleError('Başka bir projede aktif girişiniz var. O projeden çıkış yapmalısınız.');
-            return;
-          }
+          // Proje ID kontrolü query'de yapıldığı için buraya gelen kayıt kesinlikle bu projeye aittir.
 
           const locationResult = await verifyLocation(project);
           if (!locationResult.verified) {

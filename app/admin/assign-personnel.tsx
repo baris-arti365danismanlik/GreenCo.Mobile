@@ -13,7 +13,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { ArrowLeft, Search, UserPlus, MapPin, Briefcase, CheckCircle, X, DollarSign, Star, User } from 'lucide-react-native';
+import { ArrowLeft, Search, UserPlus, MapPin, Briefcase, CheckCircle, X, DollarSign, Star, User, AlertTriangle } from 'lucide-react-native';
+import { Alert } from 'react-native';
 import { COLORS } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 
@@ -94,14 +95,14 @@ export default function AssignPersonnelScreen() {
     if (request && allPersonnel.length > 0) {
       filterPersonnel();
     }
-  }, [selectedPosition, searchQuery, request, allPersonnel, filterByPosition, selectedCity, selectedDistrict]);
+  }, [selectedPosition, searchQuery, request, allPersonnel, filterByPosition, selectedCity, selectedDistrict, existingAssignedIds]);
 
   const loadData = async () => {
     try {
       const [requestRes, typesRes, personnelRes] = await Promise.all([
         supabase
           .from('personnel_requests')
-          .select('id, project_id, project_name, city, district, personnel_positions')
+          .select('id, project_id, project_name, city, district, personnel_positions, created_at')
           .eq('id', requestId)
           .single(),
         supabase
@@ -128,19 +129,54 @@ export default function AssignPersonnelScreen() {
       if (requestRes.data) {
         setRequest(requestRes.data);
 
-        // Mevcut atanmış personelleri yükle
+        // Mevcut atanmış personelleri yükle ve kaldığı yerden devam etme mantığını çalıştır
         if (requestRes.data.project_id) {
           const { data: assignments } = await supabase
             .from('project_assignments')
-            .select('personnel_id')
+            .select('personnel_id, personnel_request_id, profiles:personnel_id(personnel_type_id)')
             .eq('project_id', requestRes.data.project_id)
             .is('removed_at', null);
 
-          if (assignments) {
+          if (assignments && assignments.length > 0) {
             const assignedIds = assignments.map(a => a.personnel_id);
-            setSelectedPersonnel(assignedIds);
             setExistingAssignedCount(assignedIds.length);
             setExistingAssignedIds(assignedIds);
+
+            // Resuming Logic with Explicit Request ID
+            const positions = requestRes.data.personnel_positions;
+            let nextStep = 0;
+
+            // Sadece BU talep ile ilişkili atamaları al
+            const relevantAssignments = assignments.filter(a => a.personnel_request_id === requestId);
+
+            // Basit Kova Mantığı (Bucket Logic):
+            // Veritabanındaki atamalar zaten validasyondan geçmiştir.
+            // Bu yüzden "Tip Eşleşmesi" yapmadan, sırasıyla adımları dolduruyoruz.
+            // Örn: Talep için 3 kişi atanmışsa, ilk 3 koltuğu doldurur.
+
+            let totalAssignedCount = relevantAssignments.length;
+
+            for (let i = 0; i < positions.length; i++) {
+              const pos = positions[i];
+              const requiredInfo = pos.count || pos.quantity || 0;
+
+              if (totalAssignedCount >= requiredInfo) {
+                // Bu adım için yeterli sayı var, doldur ve sonrakine geç
+                totalAssignedCount -= requiredInfo;
+                nextStep = i + 1;
+              } else {
+                // Bu adım için sayı yetmiyor veya hiç kalmadı, burada dur.
+                // Kalanları bu adıma sayabiliriz (kısmi doluluk), ama UI tam adım mantığında.
+                nextStep = i;
+                break;
+              }
+            }
+
+            if (nextStep >= positions.length) {
+              nextStep = positions.length - 1;
+            }
+
+            setSelectedPosition(nextStep);
           }
         }
       }
@@ -197,6 +233,9 @@ export default function AssignPersonnelScreen() {
     if (!position) return;
 
     let filtered = allPersonnel.filter(p => {
+      // Zaten bu projeye atanmışsa gösterme
+      if (existingAssignedIds.includes(p.id)) return false;
+
       let positionMatch = !filterByPosition;
 
       if (filterByPosition && position.personnel_type_id) {
@@ -222,20 +261,17 @@ export default function AssignPersonnelScreen() {
       const { [personnelId]: removed, ...rest } = personnelRates;
       setPersonnelRates(rest);
     } else {
-      // Toplam gereken personel sayısını hesapla (mevcut + yeni talep)
-      const newRequestCount = request?.personnel_positions.reduce(
-        (sum, pos) => sum + (pos.count || pos.quantity || 0),
-        0
-      ) || 0;
-      const totalRequired = existingAssignedCount + newRequestCount;
+      // Sadece o anki pozisyon için gereken sayıyı al
+      const currentPosition = request?.personnel_positions[selectedPosition];
+      const stepRequired = currentPosition?.count || currentPosition?.quantity || 0;
 
-      if (selectedPersonnel.length < totalRequired) {
+      if (selectedPersonnel.length < stepRequired) {
         setCurrentPersonnelId(personnelId);
         setTempHourlyRate('');
         setTempDailyRate('');
         setRateModalVisible(true);
       } else {
-        alert(`Toplam ${totalRequired} personel seçebilirsiniz`);
+        alert(`Bu pozisyon için toplam ${stepRequired} personel seçebilirsiniz`);
       }
     }
   };
@@ -263,26 +299,7 @@ export default function AssignPersonnelScreen() {
     setTempDailyRate('');
   };
 
-  const handleAssign = async () => {
-    if (!request) return;
-
-    // Toplam gereken personel sayısını hesapla (mevcut + yeni talep)
-    const newRequestCount = request.personnel_positions.reduce(
-      (sum, pos) => sum + (pos.count || pos.quantity || 0),
-      0
-    );
-    const totalRequired = existingAssignedCount + newRequestCount;
-
-    if (selectedPersonnel.length !== totalRequired) {
-      alert(`Lütfen tam olarak ${totalRequired} personel seçin. Şu an ${selectedPersonnel.length} personel seçtiniz.`);
-      return;
-    }
-
-    const confirmed = confirm(
-      `${selectedPersonnel.length} personeli ${request.project_name} projesine atamak istediğinize emin misiniz?`
-    );
-    if (!confirmed) return;
-
+  const executeAssignment = async () => {
     setAssigning(true);
     try {
       // Sadece YENİ seçilen personelleri filtrele (mevcut atananları hariç tut)
@@ -295,7 +312,8 @@ export default function AssignPersonnelScreen() {
         const assignments = newlySelectedPersonnel.map(personnelId => {
           const rates = personnelRates[personnelId];
           return {
-            project_id: request.project_id,
+            project_id: request!.project_id,
+            personnel_request_id: request!.id, // Artık hangi talep için atandığını biliyoruz
             personnel_id: personnelId,
             assigned_at: new Date().toISOString(),
             hourly_rate: rates?.hourly ? parseFloat(rates.hourly) : null,
@@ -308,9 +326,12 @@ export default function AssignPersonnelScreen() {
           .insert(assignments);
 
         if (assignError) throw assignError;
+
+        // Atananları anında "Atanmışlar" listesine ekle ki bir sonraki adımda listeden düşsünler
+        setExistingAssignedIds(prev => [...prev, ...newlySelectedPersonnel]);
       }
 
-      const isLastPosition = selectedPosition >= request.personnel_positions.length - 1;
+      const isLastPosition = selectedPosition >= request!.personnel_positions.length - 1;
 
       if (isLastPosition) {
         const { error: updateError } = await supabase
@@ -325,19 +346,71 @@ export default function AssignPersonnelScreen() {
           console.error('Talep güncelleme hatası:', updateError);
         }
 
-        alert('Başarılı! Tüm personel atamaları tamamlandı ve talep onaylandı.');
-        router.push('/admin');
+        if (Platform.OS === 'web') {
+          window.alert('Başarılı! Tüm personel atamaları tamamlandı ve talep onaylandı.');
+          router.push('/admin');
+        } else {
+          Alert.alert('Başarılı', 'Tüm personel atamaları tamamlandı ve talep onaylandı.', [
+            { text: 'Tamam', onPress: () => router.push('/admin') }
+          ]);
+        }
       } else {
-        alert('Başarılı! Personeller projeye atandı.');
+        if (Platform.OS === 'web') {
+          window.alert('Başarılı! Personeller projeye atandı.');
+        } else {
+          Alert.alert('Başarılı', 'Personeller projeye atandı.');
+        }
         setSelectedPosition(selectedPosition + 1);
         setSelectedPersonnel([]);
         setSearchQuery('');
       }
     } catch (error: any) {
       console.error('Atama hatası:', error);
-      alert('Hata: ' + (error.message || 'Atama başarısız. Lütfen tekrar deneyin.'));
+      if (Platform.OS === 'web') {
+        window.alert('Hata: ' + (error.message || 'Atama başarısız'));
+      } else {
+        Alert.alert('Hata', error.message || 'Atama başarısız. Lütfen tekrar deneyin.');
+      }
     } finally {
       setAssigning(false);
+    }
+  };
+
+  const handleAssign = async () => {
+    if (!request) return;
+
+    // Sadece o anki pozisyon için gereken sayıyı al
+    const currentPosition = request.personnel_positions[selectedPosition];
+    const stepRequired = currentPosition?.count || currentPosition?.quantity || 0;
+
+    if (selectedPersonnel.length !== stepRequired) {
+      const msg = `Lütfen bu pozisyon için ${stepRequired} personel seçin. Şu an ${selectedPersonnel.length} personel seçtiniz.`;
+      if (Platform.OS === 'web') window.alert(msg);
+      else Alert.alert('Eksik Seçim', msg);
+      return;
+    }
+
+    const confirmMessage = `${selectedPersonnel.length} personeli ${request.project_name} projesine atamak istediğinize emin misiniz?`;
+
+    if (Platform.OS === 'web') {
+      if (window.confirm(confirmMessage)) {
+        executeAssignment();
+      }
+    } else {
+      Alert.alert(
+        'Onay',
+        confirmMessage,
+        [
+          {
+            text: 'İptal',
+            style: 'cancel',
+          },
+          {
+            text: 'Evet, Ata',
+            onPress: executeAssignment,
+          },
+        ]
+      );
     }
   };
 
@@ -430,9 +503,15 @@ export default function AssignPersonnelScreen() {
             <View style={styles.positionRow}>
               <UserPlus size={18} color={COLORS.primary} />
               <Text style={styles.positionLabel}>Gerekli:</Text>
-              <Text style={styles.positionValue}>
-                {existingAssignedCount + request.personnel_positions.reduce((sum, pos) => sum + (pos.count || pos.quantity || 0), 0)} / {selectedPersonnel.length} seçildi
-              </Text>
+              {(request.personnel_positions.reduce((sum, pos) => sum + (pos.count || pos.quantity || 0), 0) > (currentPosition?.count || currentPosition?.quantity || 0)) ? (
+                <Text style={styles.positionValue}>
+                  {currentPosition?.count || currentPosition?.quantity || 0} / {selectedPersonnel.length} seçildi
+                </Text>
+              ) : (
+                <Text style={styles.positionValue}>
+                  {currentPosition?.count || currentPosition?.quantity || 0} / {selectedPersonnel.length} seçildi
+                </Text>
+              )}
             </View>
           </View>
 
@@ -611,10 +690,10 @@ export default function AssignPersonnelScreen() {
         <TouchableOpacity
           style={[
             styles.assignButton,
-            (selectedPersonnel.length !== (existingAssignedCount + request.personnel_positions.reduce((sum, pos) => sum + (pos.count || pos.quantity || 0), 0)) || assigning) && styles.assignButtonDisabled,
+            (selectedPersonnel.length !== (currentPosition?.count || currentPosition?.quantity || 0) || assigning) && styles.assignButtonDisabled,
           ]}
           onPress={handleAssign}
-          disabled={selectedPersonnel.length !== (existingAssignedCount + request.personnel_positions.reduce((sum, pos) => sum + (pos.count || pos.quantity || 0), 0)) || assigning}
+          disabled={selectedPersonnel.length !== (currentPosition?.count || currentPosition?.quantity || 0) || assigning}
         >
           <UserPlus size={20} color="white" />
           <Text style={styles.assignButtonText}>
@@ -688,7 +767,7 @@ export default function AssignPersonnelScreen() {
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+    </SafeAreaView >
   );
 }
 

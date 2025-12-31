@@ -1,7 +1,11 @@
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Modal } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Modal, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
-import { LogOut, Building, User, Send, Users, UserCheck, X, CheckCircle, ClipboardList, FolderKanban, BarChart3, ArrowLeft, DollarSign, FileText } from 'lucide-react-native';
+import {
+  LogOut, Building, User, Send, Users, UserCheck, X, CheckCircle,
+  ClipboardList, FolderKanban, BarChart3, ArrowLeft, DollarSign,
+  FileText, Search as SearchIcon
+} from 'lucide-react-native';
 import { COLORS } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
@@ -24,6 +28,7 @@ export default function AdminScreen() {
     totalPersonnel: 0,
     workingToday: 0,
   });
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     loadProjects();
@@ -402,18 +407,37 @@ export default function AdminScreen() {
             </View>
 
             {step === 'project' && (
-              <ScrollView style={styles.modalBody}>
-                {projects.map((project) => (
-                  <TouchableOpacity
-                    key={project.id}
-                    style={styles.projectItem}
-                    onPress={() => handleProjectSelect(project.id)}
-                  >
-                    <Building size={20} color={COLORS.primary} />
-                    <Text style={styles.projectName}>{project.name}</Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
+              <>
+                <View style={styles.searchBox}>
+                  <SearchIcon size={20} color={COLORS.textLight} />
+                  <TextInput
+                    style={styles.searchInput}
+                    placeholder="Proje ara..."
+                    value={searchQuery}
+                    onChangeText={setSearchQuery}
+                    placeholderTextColor={COLORS.textLight}
+                  />
+                </View>
+                <ScrollView style={styles.modalBody}>
+                  {projects
+                    .filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase()))
+                    .map((project) => (
+                      <TouchableOpacity
+                        key={project.id}
+                        style={styles.projectItem}
+                        onPress={() => handleProjectSelect(project.id)}
+                      >
+                        <Building size={20} color={COLORS.primary} />
+                        <Text style={styles.projectName}>{project.name}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  {projects.filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase())).length === 0 && (
+                    <Text style={{ textAlign: 'center', color: COLORS.textLight, marginTop: 20 }}>
+                      Proje bulunamadı
+                    </Text>
+                  )}
+                </ScrollView>
+              </>
             )}
 
             {step === 'period' && (
@@ -681,5 +705,23 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: COLORS.text,
     lineHeight: 18,
+  },
+  searchBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'white',
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 10,
+    marginHorizontal: 20,
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  searchInput: {
+    flex: 1,
+    marginLeft: 10,
+    fontSize: 15,
+    color: COLORS.text,
   },
 });

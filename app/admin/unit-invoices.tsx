@@ -3,17 +3,20 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { ArrowLeft, FileText, Clock, CheckCircle, XCircle, Plus } from 'lucide-react-native';
 import { COLORS } from '@/constants/theme';
-import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
+import { useFocusEffect } from 'expo-router';
+import { useState, useCallback } from 'react';
 
 export default function AdminUnitInvoicesScreen() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [invoices, setInvoices] = useState<any[]>([]);
 
-  useEffect(() => {
-    loadInvoices();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      loadInvoices();
+    }, [])
+  );
 
   const loadInvoices = async () => {
     try {
@@ -50,7 +53,7 @@ export default function AdminUnitInvoicesScreen() {
       case 'pending_manager_review':
         return { icon: Clock, color: COLORS.warning, text: 'PM Onayı Bekliyor' };
       case 'pending_operations_approval':
-        return { icon: Clock, color: COLORS.info, text: 'Operasyon Onayı Bekliyor' };
+        return { icon: Clock, color: COLORS.blue, text: 'Operasyon Onayı Bekliyor' };
       case 'operations_approved':
         return { icon: CheckCircle, color: COLORS.success, text: 'Faturalanmaya Hazır' };
       case 'cancelled':

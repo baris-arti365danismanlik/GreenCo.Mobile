@@ -50,6 +50,7 @@ export default function ProjectPersonnelScreen() {
   const [filteredPersonnel, setFilteredPersonnel] = useState<Personnel[]>([]);
   const [personnelTypes, setPersonnelTypes] = useState<PersonnelType[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [projectSearchQuery, setProjectSearchQuery] = useState('');
   const [selectedType, setSelectedType] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
@@ -333,40 +334,55 @@ export default function ProjectPersonnelScreen() {
       </View>
 
       <ScrollView style={styles.content}>
+        <View style={styles.searchBox}>
+          <Search size={20} color={COLORS.textLight} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Proje ara..."
+            value={projectSearchQuery}
+            onChangeText={setProjectSearchQuery}
+            placeholderTextColor={COLORS.textLight}
+          />
+        </View>
+
         <Text style={styles.sectionTitle}>AKTİF PROJELER</Text>
 
-        {projects.length === 0 ? (
+        {projects.filter(p => p.name.toLowerCase().includes(projectSearchQuery.toLowerCase())).length === 0 ? (
           <View style={styles.emptyState}>
             <Users size={48} color={COLORS.textLight} />
-            <Text style={styles.emptyText}>Aktif proje bulunamadı</Text>
+            <Text style={styles.emptyText}>
+              {projectSearchQuery ? 'Aranan kriterlere uygun proje bulunamadı' : 'Aktif proje bulunamadı'}
+            </Text>
           </View>
         ) : (
-          projects.map((project) => (
-            <TouchableOpacity
-              key={project.id}
-              style={styles.projectCard}
-              onPress={() => handleProjectSelect(project)}
-            >
-              <View style={styles.projectHeader}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.projectName}>{project.name}</Text>
-                  {project.address && (
-                    <Text style={styles.projectAddress}>{project.address}</Text>
-                  )}
-                  <Text style={styles.projectDates}>
-                    {project.start_date} - {project.end_date}
+          projects
+            .filter(p => p.name.toLowerCase().includes(projectSearchQuery.toLowerCase()))
+            .map((project) => (
+              <TouchableOpacity
+                key={project.id}
+                style={styles.projectCard}
+                onPress={() => handleProjectSelect(project)}
+              >
+                <View style={styles.projectHeader}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.projectName}>{project.name}</Text>
+                    {project.address && (
+                      <Text style={styles.projectAddress}>{project.address}</Text>
+                    )}
+                    <Text style={styles.projectDates}>
+                      {project.start_date} - {project.end_date}
+                    </Text>
+                  </View>
+                  <ChevronRight size={24} color={COLORS.textLight} />
+                </View>
+                <View style={styles.projectFooter}>
+                  <Users size={16} color={COLORS.primary} />
+                  <Text style={styles.personnelCount}>
+                    {project.personnel_count} Personel
                   </Text>
                 </View>
-                <ChevronRight size={24} color={COLORS.textLight} />
-              </View>
-              <View style={styles.projectFooter}>
-                <Users size={16} color={COLORS.primary} />
-                <Text style={styles.personnelCount}>
-                  {project.personnel_count} Personel
-                </Text>
-              </View>
-            </TouchableOpacity>
-          ))
+              </TouchableOpacity>
+            ))
         )}
       </ScrollView>
 
@@ -777,10 +793,12 @@ const styles = StyleSheet.create({
   searchBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.bg,
+    backgroundColor: 'white',
     padding: 12,
     borderRadius: 12,
-    marginBottom: 12,
+    marginBottom: 15,
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
   searchInput: {
     flex: 1,
