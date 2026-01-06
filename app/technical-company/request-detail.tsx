@@ -27,6 +27,7 @@ import {
   Stethoscope,
 } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { DateRangePicker } from '@/components/DateRangePicker';
 
 type BidType = 'quote' | 'info_request' | 'diagnostic_service';
 
@@ -56,6 +57,7 @@ type ServiceRequest = {
   projects_greenco?: {
     name: string;
   } | null;
+  status: string;
 };
 
 export default function RequestDetail() {
@@ -67,7 +69,11 @@ export default function RequestDetail() {
   const [request, setRequest] = useState<ServiceRequest | null>(null);
   const [bidType, setBidType] = useState<BidType>('quote');
   const [bidAmount, setBidAmount] = useState('');
-  const [estimatedDuration, setEstimatedDuration] = useState('');
+
+  // New date range state
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+
   const [bidDescription, setBidDescription] = useState('');
   const [bidStats, setBidStats] = useState<{ count: number; minAmount?: number } | null>(null);
 
@@ -83,6 +89,7 @@ export default function RequestDetail() {
           id,
           title,
           description,
+          status,
           location_city,
           location_district,
           location_address,
@@ -127,14 +134,20 @@ export default function RequestDetail() {
   const submitBid = async () => {
     if (submitting) return;
 
-    if (!bidDescription?.trim()) {
-      Alert.alert('Uyarı', 'Lütfen açıklama girin');
-      return;
-    }
+
 
     if (bidType === 'quote') {
-      if (!bidAmount || !estimatedDuration) {
-        Alert.alert('Uyarı', 'Lütfen tüm alanları doldurun');
+      if (!bidAmount) {
+        Alert.alert('Uyarı', 'Lütfen teklif tutarını girin');
+        return;
+      }
+      if (!startDate || !endDate) {
+        Alert.alert('Uyarı', 'Lütfen başlangıç ve bitiş tarihlerini seçin');
+        return;
+      }
+
+      if (new Date(startDate) > new Date(endDate)) {
+        Alert.alert('Hata', 'Çalışma başlangıç tarihi, bitiş tarihinden sonra olamaz.');
         return;
       }
     }
@@ -168,7 +181,8 @@ export default function RequestDetail() {
 
       if (bidType === 'quote') {
         bidData.bid_amount = parseFloat(bidAmount);
-        bidData.estimated_duration = estimatedDuration;
+        // Combine dates as YYYY-MM-DD/YYYY-MM-DD
+        bidData.estimated_duration = `${startDate}/${endDate}`;
       } else if (bidType === 'diagnostic_service') {
         bidData.bid_amount = parseFloat(bidAmount);
       }
@@ -176,6 +190,19 @@ export default function RequestDetail() {
       const { error } = await supabase.from('technical_service_bids').insert(bidData);
 
       if (error) throw error;
+
+      // If request was in info_needed status, move it back to bidding so admin sees the new offer
+      if (request?.status === 'info_needed') {
+        const { error: updateError } = await supabase
+          .from('technical_service_requests')
+          .update({
+            status: 'bidding',
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', id);
+
+        if (updateError) console.error('Error updating request status:', updateError);
+      }
 
       Alert.alert('Başarılı', `Teklifiniz gönderildi (Tur ${currentRound})`);
       router.back();
@@ -442,17 +469,16 @@ export default function RequestDetail() {
                 </View>
               </View>
 
+
+
               <View style={styles.inputGroup}>
-                <Text style={styles.label}>Tahmini Süre</Text>
-                <View style={styles.inputWrapper}>
-                  <Clock size={20} color={COLORS.textLight} />
-                  <TextInput
-                    style={styles.input}
-                    value={estimatedDuration}
-                    onChangeText={setEstimatedDuration}
-                    placeholder="Örn: 2 gün"
-                  />
-                </View>
+                <Text style={styles.label}>Planlanan Çalışma Tarihleri</Text>
+                <DateRangePicker
+                  startDate={startDate}
+                  endDate={endDate}
+                  onStartDateChange={setStartDate}
+                  onEndDateChange={setEndDate}
+                />
               </View>
 
               <View style={styles.inputGroup}>
@@ -534,15 +560,15 @@ export default function RequestDetail() {
                   {bidType === 'quote'
                     ? 'Teklif Gönder'
                     : bidType === 'info_request'
-                    ? 'Bilgi Talebi Gönder'
-                    : 'Sorun Tespiti Gönder'}
+                      ? 'Bilgi Talebi Gönder'
+                      : 'Sorun Tespiti Gönder'}
                 </Text>
               </>
             )}
           </TouchableOpacity>
         </View>
-      </ScrollView>
-    </SafeAreaView>
+      </ScrollView >
+    </SafeAreaView >
   );
 }
 

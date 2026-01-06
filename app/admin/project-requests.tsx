@@ -37,7 +37,7 @@ type PersonnelRequest = {
   requester: { full_name: string };
 };
 
-export default function AdminPersonnelRequestsScreen() {
+export default function AdminProjectRequestsScreen() {
   const router = useRouter();
   const { profile } = useAuth();
   const [requests, setRequests] = useState<PersonnelRequest[]>([]);
@@ -74,15 +74,14 @@ export default function AdminPersonnelRequestsScreen() {
       ]);
 
       if (requestsRes.error) throw requestsRes.error;
-
-
-      // Filtreleme: Personel pozisyonu OLAN kayıtlar
-      const personnelRequests = (requestsRes.data || []).filter(req =>
-        req.personnel_positions &&
-        req.personnel_positions.length > 0
+      // Filtreleme: Personel pozisyonu OLMAYAN (boş array veya null) kayıtlar
+      const projectRequests = (requestsRes.data || []).filter(req =>
+        !req.personnel_positions ||
+        req.personnel_positions.length === 0 ||
+        (Array.isArray(req.personnel_positions) && req.personnel_positions.length === 0)
       );
 
-      setRequests(personnelRequests);
+      setRequests(projectRequests);
 
       if (typesRes.data) {
         const typesMap: { [key: string]: string } = {};
@@ -288,11 +287,10 @@ export default function AdminPersonnelRequestsScreen() {
         if (createdNewProject) message += '\n✓ Yeni proje oluşturuldu';
         if (createdNewManager) message += '\n✓ Yeni proje yöneticisi oluşturuldu';
         if (projectId && managerId) message += '\n✓ Proje yöneticisi atandı';
-        message += '\n\nŞimdi personel ataması yapabilirsiniz.';
         window.alert(message);
       }
 
-      router.push(`/admin/assign-personnel?requestId=${request.id}`);
+      router.replace('/admin/project-requests');
     } catch (error: any) {
       console.error('Onaylama hatası:', error);
       if (Platform.OS === 'web') {
@@ -383,18 +381,12 @@ export default function AdminPersonnelRequestsScreen() {
         <TouchableOpacity onPress={() => router.back()}>
           <ArrowLeft size={24} color={COLORS.secondary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Personel Talepleri</Text>
+        <Text style={styles.headerTitle}>Proje Talepleri</Text>
         <View style={{ width: 24 }} />
       </View>
 
       <ScrollView style={styles.content}>
-        <TouchableOpacity
-          style={styles.createButton}
-          onPress={() => router.push('/admin/create-project?title=Personel Talebi Oluştur&mode=request')}
-        >
-          <Plus size={24} color="white" />
-          <Text style={styles.createButtonText}>Yeni Talep Oluştur</Text>
-        </TouchableOpacity>
+
 
         {loading ? (
           <Text style={styles.loadingText}>Yükleniyor...</Text>
@@ -460,30 +452,6 @@ export default function AdminPersonnelRequestsScreen() {
                           <Text style={styles.infoCardValue}>{request.requester?.full_name || 'Bilinmiyor'}</Text>
                         </View>
 
-                        <View style={styles.personnelSection}>
-                          <Text style={styles.personnelTitle}>
-                            Talep Edilen Personel (Toplam: {totalPersonnel})
-                          </Text>
-                          {request.personnel_positions.map((position: any, idx: number) => (
-                            <View key={idx} style={styles.personnelItem}>
-                              <View style={styles.personnelRow}>
-                                <User size={16} color={COLORS.primary} />
-                                <Text style={styles.personnelText}>
-                                  {position.count}x {personnelTypes[position.personnel_type_id] || position.type || 'Bilinmiyor'}
-                                </Text>
-                              </View>
-                              <Text style={styles.personnelDetail}>
-                                Sabıka: {position.criminal_record || 'Belirtilmemiş'}
-                              </Text>
-                              {position.certificates && position.certificates.length > 0 && (
-                                <Text style={styles.personnelDetail}>
-                                  Sertifikalar: {position.certificates.join(', ')}
-                                </Text>
-                              )}
-                            </View>
-                          ))}
-                        </View>
-
                         {request.notes && (
                           <Text style={styles.notesText}>Not: {request.notes}</Text>
                         )}
@@ -535,19 +503,7 @@ export default function AdminPersonnelRequestsScreen() {
                         </View>
                       </View>
 
-                      <View style={styles.requestDetails}>
-                        <Text style={styles.detailText}>
-                          Toplam {totalPersonnel} personel ataması bekleniyor
-                        </Text>
-                      </View>
 
-                      <TouchableOpacity
-                        style={styles.assignButton}
-                        onPress={() => router.push(`/admin/assign-personnel?requestId=${request.id}`)}
-                      >
-                        <User size={18} color="white" />
-                        <Text style={styles.assignButtonText}>Personel Ata</Text>
-                      </TouchableOpacity>
                     </View>
                   );
                 })}
@@ -645,7 +601,7 @@ export default function AdminPersonnelRequestsScreen() {
             {requests.length === 0 && (
               <View style={styles.emptyState}>
                 <Clock size={48} color={COLORS.border} />
-                <Text style={styles.emptyText}>Henüz talep bulunmuyor</Text>
+                <Text style={styles.emptyText}>Bekleyen proje talebi yok</Text>
               </View>
             )}
           </>

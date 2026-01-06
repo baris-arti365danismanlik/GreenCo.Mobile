@@ -11,8 +11,9 @@ import {
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { COLORS } from '@/constants/theme';
-import { ArrowLeft, Building2, MapPin, FileText, CheckCircle, Calendar, Users, DollarSign, MessageSquare, Stethoscope } from 'lucide-react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { ArrowLeft, Building2, MapPin, FileText, CheckCircle, Calendar, Users, DollarSign, MessageSquare, Stethoscope, Edit, Save, X } from 'lucide-react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { TextInput } from 'react-native';
 
 type Request = {
   id: string;
@@ -40,6 +41,8 @@ export default function OperationsTechnicalRequestDetail() {
   const [loading, setLoading] = useState(true);
   const [request, setRequest] = useState<Request | null>(null);
   const [updating, setUpdating] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [descriptionText, setDescriptionText] = useState('');
   const [bidStats, setBidStats] = useState<{
     count: number;
     minAmount?: number;
@@ -69,6 +72,7 @@ export default function OperationsTechnicalRequestDetail() {
 
       if (error) throw error;
       setRequest(data);
+      if (data?.description) setDescriptionText(data.description);
 
       if (data?.status === 'bidding') {
         const { data: bids } = await supabase
@@ -150,6 +154,30 @@ export default function OperationsTechnicalRequestDetail() {
     }
   };
 
+  const handleSaveDescription = async () => {
+    try {
+      setUpdating(true);
+      const { error } = await supabase
+        .from('technical_service_requests')
+        .update({
+          description: descriptionText,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', id);
+
+      if (error) throw error;
+      Alert.alert('Başarılı', 'Açıklama güncellendi.');
+      setEditMode(false);
+      setRequest(prev => prev ? ({ ...prev, description: descriptionText }) : null);
+
+    } catch (e) {
+      Alert.alert('Hata', 'Güncelleme başarısız');
+      console.error(e);
+    } finally {
+      setUpdating(false);
+    }
+  };
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -213,8 +241,79 @@ export default function OperationsTechnicalRequestDetail() {
           </View>
 
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Açıklama</Text>
-            <Text style={styles.description}>{request.description}</Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <Text style={styles.sectionTitle}>Açıklama</Text>
+              {request.status === 'info_needed' && !editMode && (
+                <TouchableOpacity
+                  onPress={() => setEditMode(true)}
+                  style={{ padding: 4 }}
+                >
+                  <Edit size={18} color={COLORS.primary} />
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {editMode ? (
+              <View>
+                <TextInput
+                  multiline
+                  value={descriptionText}
+                  onChangeText={setDescriptionText}
+                  style={{
+                    borderWidth: 1,
+                    borderColor: COLORS.border,
+                    borderRadius: 8,
+                    padding: 12,
+                    minHeight: 100,
+                    textAlignVertical: 'top',
+                    fontSize: 15,
+                    color: COLORS.text,
+                    backgroundColor: '#fff'
+                  }}
+                />
+                <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
+                  <TouchableOpacity
+                    onPress={() => {
+                      setEditMode(false);
+                      setDescriptionText(request.description);
+                    }}
+                    style={{
+                      paddingVertical: 6,
+                      paddingHorizontal: 12,
+                      borderRadius: 6,
+                      backgroundColor: '#f3f4f6',
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 4
+                    }}
+                  >
+                    <X size={16} color={COLORS.text} />
+                    <Text style={{ color: COLORS.text, fontSize: 13, fontWeight: '600' }}>İptal</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={handleSaveDescription}
+                    style={{
+                      paddingVertical: 6,
+                      paddingHorizontal: 12,
+                      borderRadius: 6,
+                      backgroundColor: COLORS.primary,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 4
+                    }}
+                  >
+                    {updating ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <Save size={16} color="#fff" />
+                    )}
+                    <Text style={{ color: '#fff', fontSize: 13, fontWeight: '600' }}>Kaydet</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : (
+              <Text style={styles.description}>{request.description}</Text>
+            )}
           </View>
 
           <View style={styles.section}>
@@ -272,21 +371,9 @@ export default function OperationsTechnicalRequestDetail() {
                   )}
                 </View>
 
-                {bidStats.minAmount && (
-                  <View style={styles.minBidSection}>
-                    <View style={styles.minBidHeader}>
-                      <DollarSign size={18} color={COLORS.success} />
-                      <Text style={styles.minBidLabel}>En Düşük Fiyat Teklifi</Text>
-                    </View>
-                    <Text style={styles.minBidAmount}>
-                      {new Intl.NumberFormat('tr-TR', {
-                        style: 'currency',
-                        currency: 'TRY',
-                        minimumFractionDigits: 0,
-                      }).format(bidStats.minAmount)}
-                    </Text>
-                  </View>
-                )}
+
+
+
               </View>
             </View>
           )}

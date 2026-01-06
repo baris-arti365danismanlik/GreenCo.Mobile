@@ -116,13 +116,43 @@ export default function TechnicalCompanies() {
 
   const loadData = async () => {
     try {
-      const [companiesResult, typesResult, brandsResult] = await Promise.all([
+      const [companiesResult, typesResult, brandsResult, ratingsResult] = await Promise.all([
         supabase.from('technical_service_companies').select('*').order('company_name'),
         supabase.from('technical_service_types').select('id, name, category_type').eq('is_active', true),
         supabase.from('asset_brands').select('id, name, service_type_id').order('name'),
+        supabase.from('technical_service_assignments').select('company_id, pm_rating').not('pm_rating', 'is', null),
       ]);
 
-      if (companiesResult.data) setCompanies(companiesResult.data);
+      let companiesData = companiesResult.data || [];
+
+      if (ratingsResult.data) {
+        // Calculate dynamic stats
+        const statsMap: Record<string, { sum: number; count: number }> = {};
+
+        ratingsResult.data.forEach((item: any) => {
+          if (item.company_id) {
+            if (!statsMap[item.company_id]) {
+              statsMap[item.company_id] = { sum: 0, count: 0 };
+            }
+            statsMap[item.company_id].sum += (Number(item.pm_rating) || 0);
+            statsMap[item.company_id].count += 1;
+          }
+        });
+
+        companiesData = companiesData.map((comp) => {
+          const stats = statsMap[comp.id];
+          if (stats) {
+            return {
+              ...comp,
+              average_rating: stats.sum / stats.count,
+              total_jobs: stats.count,
+            };
+          }
+          return comp;
+        });
+      }
+
+      setCompanies(companiesData);
       if (typesResult.data) setServiceTypes(typesResult.data);
       if (brandsResult.data) setAssetBrands(brandsResult.data);
     } catch (error) {

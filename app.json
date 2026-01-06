@@ -2,27 +2,36 @@
   "expo": {
     "name": "KADRO360",
     "slug": "kadro360-service",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
-    "icon": "./assets/images/image.png",
+    "icon": "./assets/images/new-logo.png",
     "scheme": "kadro360",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
+     "newArchEnabled": true,
+    "jsEngine": "hermes",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.greenco.service"
+      "bundleIdentifier": "com.greenco.service",
+      "buildNumber": "5"
     },
     "android": {
       "package": "com.greenco.service",
+      "versionCode": 5,
+      "minSdkVersion": 24,
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/image.png",
+        "foregroundImage": "./assets/images/icon.png",
         "backgroundColor": "#1B7F4D"
       }
     },
     "web": {
       "bundler": "metro",
       "output": "single",
-      "favicon": "./assets/images/image.png"
+      "favicon": "./assets/images/icon.png"
+    },
+    "splash": {
+      "image": "./assets/images/icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
     },
     "plugins": [
       "expo-router",
@@ -31,6 +40,13 @@
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "69461f3b-564f-43e3-90f2-5bf442b32d0a"
+      }
+    },
+    "owner": "arti365"
   }
 }

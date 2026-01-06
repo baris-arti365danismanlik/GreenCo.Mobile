@@ -22,6 +22,7 @@ import {
   Package,
   MapPin,
   DollarSign,
+  FolderKanban,
 } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -265,6 +266,32 @@ export default function TechnicalDashboard() {
 
               <TouchableOpacity
                 style={styles.actionCard}
+                onPress={() => router.push('/operations/create-request?isNewProject=true&source=technical')}
+              >
+                <View style={[styles.actionIcon, { backgroundColor: '#dcfce7' }]}>
+                  <Plus size={24} color={COLORS.primary} />
+                </View>
+                <View style={styles.actionInfo}>
+                  <Text style={styles.actionTitle}>Yeni Proje Oluştur</Text>
+                  <Text style={styles.actionDesc}>Yeni proje oluştur ve personel talep et</Text>
+                </View>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.actionCard}
+                onPress={() => router.push('/admin/project-requests')}
+              >
+                <View style={[styles.actionIcon, { backgroundColor: '#f3e8ff' }]}>
+                  <FolderKanban size={24} color={COLORS.purple} />
+                </View>
+                <View style={styles.actionInfo}>
+                  <Text style={styles.actionTitle}>Proje Talepleri</Text>
+                  <Text style={styles.actionDesc}>Teknik proje taleplerini yönet</Text>
+                </View>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.actionCard}
                 onPress={() => router.push('/technical/create-request')}
               >
                 <View style={[styles.actionIcon, { backgroundColor: '#e0f2fe' }]}>
@@ -330,6 +357,21 @@ export default function TechnicalDashboard() {
                   <View style={styles.actionInfo}>
                     <Text style={styles.actionTitle}>Teknik Servis Hakedişleri</Text>
                     <Text style={styles.actionDesc}>Hakediş oluştur ve yönet</Text>
+                  </View>
+                </TouchableOpacity>
+              )}
+
+              {profile?.role === 'admin' && (
+                <TouchableOpacity
+                  style={styles.actionCard}
+                  onPress={() => router.push('/admin/project-technical-invoices')}
+                >
+                  <View style={[styles.actionIcon, { backgroundColor: '#dcfce7' }]}>
+                    <DollarSign size={24} color={COLORS.primary} />
+                  </View>
+                  <View style={styles.actionInfo}>
+                    <Text style={styles.actionTitle}>Proje Teknik Hakedişleri</Text>
+                    <Text style={styles.actionDesc}>Müşteriye sunulacak hakedişler</Text>
                   </View>
                 </TouchableOpacity>
               )}

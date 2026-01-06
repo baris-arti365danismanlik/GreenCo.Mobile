@@ -28,6 +28,7 @@ import {
   DollarSign,
   Clock,
   FileText,
+  Pencil,
 } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -56,6 +57,7 @@ type Assignment = {
     } | null;
   } | null;
   technical_service_companies: {
+    id: string;
     company_name: string;
     phone: string;
   } | null;
@@ -70,6 +72,7 @@ export default function TechnicalServiceEvaluation() {
   const [rating, setRating] = useState(0);
   const [feedback, setFeedback] = useState('');
   const [completionStatus, setCompletionStatus] = useState<'satisfactory' | 'incomplete' | 'unsatisfactory' | 'requires_rework'>('satisfactory');
+  const [isEditing, setIsEditing] = useState(false);
 
   useEffect(() => {
     loadAssignment();
@@ -102,6 +105,7 @@ export default function TechnicalServiceEvaluation() {
             technical_service_types(name)
           ),
           technical_service_companies(
+            id,
             company_name,
             phone
           )
@@ -162,6 +166,38 @@ export default function TechnicalServiceEvaluation() {
 
       if (error) throw error;
 
+      // Update company stats
+      if (assignment?.technical_service_companies?.id) {
+        const companyId = assignment.technical_service_companies.id;
+
+        // Get all rated assignments for this company to calculate new average
+        const { data: ratings, error: ratingError } = await supabase
+          .from('technical_service_assignments')
+          .select('pm_rating')
+          .eq('company_id', companyId)
+          .not('pm_rating', 'is', null);
+
+        if (!ratingError && ratings) {
+          const totalJobs = ratings.length;
+          const averageRating = totalJobs > 0
+            ? ratings.reduce((sum, item) => sum + (item.pm_rating || 0), 0) / totalJobs
+            : 0;
+
+          // Update company table
+          const { error: updateError } = await supabase
+            .from('technical_service_companies')
+            .update({
+              average_rating: averageRating,
+              total_jobs: totalJobs
+            })
+            .eq('id', companyId);
+
+          if (updateError) {
+            console.error('Error updating company stats:', updateError);
+          }
+        }
+      }
+
       if (Platform.OS === 'web') {
         window.alert('Değerlendirme kaydedildi');
         router.back();
@@ -207,7 +243,7 @@ export default function TechnicalServiceEvaluation() {
       case 'requires_rework':
         return { label: 'Yeniden Yapılmalı', icon: RefreshCw, color: COLORS.warning };
       default:
-        return { label: status, icon: AlertTriangle, color: COLORS.textSecondary };
+        return { label: status, icon: AlertTriangle, color: COLORS.textLight };
     }
   };
 
@@ -243,14 +279,14 @@ export default function TechnicalServiceEvaluation() {
           <Text style={styles.cardTitle}>{assignment.technical_service_requests?.title}</Text>
 
           <View style={styles.infoRow}>
-            <Wrench size={16} color={COLORS.textSecondary} />
+            <Wrench size={16} color={COLORS.textLight} />
             <Text style={styles.infoText}>
               {assignment.technical_service_requests?.technical_service_types?.name}
             </Text>
           </View>
 
           <View style={styles.infoRow}>
-            <MapPin size={16} color={COLORS.textSecondary} />
+            <MapPin size={16} color={COLORS.textLight} />
             <Text style={styles.infoText}>
               {assignment.technical_service_requests?.location_district}, {assignment.technical_service_requests?.location_city}
             </Text>
@@ -265,7 +301,7 @@ export default function TechnicalServiceEvaluation() {
 
           {assignment.completion_date && (
             <View style={styles.infoRow}>
-              <Calendar size={16} color={COLORS.textSecondary} />
+              <Calendar size={16} color={COLORS.textLight} />
               <Text style={styles.infoText}>{formatDate(assignment.completion_date)}</Text>
             </View>
           )}
@@ -287,7 +323,7 @@ export default function TechnicalServiceEvaluation() {
           {assignment.parts_used && (
             <View style={styles.detailSection}>
               <View style={styles.iconLabelRow}>
-                <Package size={16} color={COLORS.textSecondary} />
+                <Package size={16} color={COLORS.textLight} />
                 <Text style={styles.detailLabel}>Kullanılan Parçalar:</Text>
               </View>
               <Text style={styles.detailValue}>{assignment.parts_used}</Text>
@@ -297,7 +333,7 @@ export default function TechnicalServiceEvaluation() {
           <View style={styles.costRow}>
             {assignment.labor_cost !== null && (
               <View style={styles.costItem}>
-                <Clock size={16} color={COLORS.textSecondary} />
+                <Clock size={16} color={COLORS.textLight} />
                 <Text style={styles.costLabel}>İşçilik:</Text>
                 <Text style={styles.costValue}>{assignment.labor_cost.toLocaleString('tr-TR')} ₺</Text>
               </View>
@@ -305,7 +341,7 @@ export default function TechnicalServiceEvaluation() {
 
             {assignment.parts_cost !== null && (
               <View style={styles.costItem}>
-                <Package size={16} color={COLORS.textSecondary} />
+                <Package size={16} color={COLORS.textLight} />
                 <Text style={styles.costLabel}>Parça:</Text>
                 <Text style={styles.costValue}>{assignment.parts_cost.toLocaleString('tr-TR')} ₺</Text>
               </View>
@@ -319,9 +355,14 @@ export default function TechnicalServiceEvaluation() {
           )}
         </View>
 
-        {alreadyEvaluated && (
+        {alreadyEvaluated && !isEditing && (
           <View style={[styles.card, styles.evaluatedCard]}>
-            <Text style={styles.evaluatedTitle}>Değerlendirme Yapıldı</Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <Text style={styles.evaluatedTitle}>Değerlendirme Yapıldı</Text>
+              <TouchableOpacity onPress={() => setIsEditing(true)}>
+                <Pencil size={18} color={COLORS.primary} />
+              </TouchableOpacity>
+            </View>
             <View style={styles.evaluatedContent}>
               <View style={styles.ratingDisplay}>
                 {[1, 2, 3, 4, 5].map((star) => (
@@ -364,7 +405,7 @@ export default function TechnicalServiceEvaluation() {
           </View>
         )}
 
-        {!alreadyEvaluated && (
+        {(!alreadyEvaluated || isEditing) && (
           <>
             <View style={styles.card}>
               <Text style={styles.sectionTitle}>Puan Verin</Text>
@@ -408,7 +449,7 @@ export default function TechnicalServiceEvaluation() {
                       ]}
                       onPress={() => setCompletionStatus(status.value as any)}
                     >
-                      <StatusIcon size={20} color={isSelected ? status.color : COLORS.textSecondary} />
+                      <StatusIcon size={20} color={isSelected ? status.color : COLORS.textLight} />
                       <Text style={[
                         styles.statusOptionText,
                         isSelected && { color: status.color, fontWeight: '600' }
@@ -426,7 +467,7 @@ export default function TechnicalServiceEvaluation() {
               <TextInput
                 style={styles.feedbackInput}
                 placeholder="İş hakkında değerlendirmenizi yazın..."
-                placeholderTextColor={COLORS.textSecondary}
+                placeholderTextColor={COLORS.textLight}
                 value={feedback}
                 onChangeText={setFeedback}
                 multiline
@@ -459,7 +500,7 @@ export default function TechnicalServiceEvaluation() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor: COLORS.bg,
   },
   header: {
     flexDirection: 'row',
@@ -506,11 +547,11 @@ const styles = StyleSheet.create({
   },
   infoText: {
     fontSize: 14,
-    color: COLORS.textSecondary,
+    color: COLORS.textLight,
   },
   infoLabel: {
     fontSize: 14,
-    color: COLORS.textSecondary,
+    color: COLORS.textLight,
     fontWeight: '500',
   },
   infoValue: {
@@ -529,7 +570,7 @@ const styles = StyleSheet.create({
   detailLabel: {
     fontSize: 14,
     fontWeight: '500',
-    color: COLORS.textSecondary,
+    color: COLORS.textLight,
     marginBottom: 4,
   },
   detailValue: {
@@ -555,7 +596,7 @@ const styles = StyleSheet.create({
   },
   costLabel: {
     fontSize: 13,
-    color: COLORS.textSecondary,
+    color: COLORS.textLight,
   },
   costValue: {
     fontSize: 14,

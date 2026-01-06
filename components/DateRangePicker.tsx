@@ -47,6 +47,13 @@ export function DateRangePicker({
         setStartError('Geçersiz tarih formatı (YYYY-MM-DD)');
       } else if (isDateInRange(text, disabledRanges)) {
         setStartError('Bu tarih zaten onaylanmış bir dönemde');
+      } else if (endDate && new Date(text) > new Date(endDate)) {
+        setStartError('Başlangıç tarihi bitişten sonra olamaz');
+      } else {
+        // Clear end error if it was about sequence
+        if (endError === 'Bitiş tarihi başlangıçtan önce olamaz') {
+          setEndError('');
+        }
       }
     }
   };

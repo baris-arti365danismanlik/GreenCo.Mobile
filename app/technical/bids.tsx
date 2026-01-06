@@ -7,6 +7,7 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
+  Modal,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { supabase } from '@/lib/supabase';
@@ -22,6 +23,7 @@ import {
   Stethoscope,
   CheckCircle,
   Send,
+  Star,
 } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -57,6 +59,9 @@ export default function BidsPage() {
 
   const userRole = profile?.role || '';
   const canApproveBids = userRole === 'admin' || userRole === 'operations';
+
+  const [showDiagnosticModal, setShowDiagnosticModal] = useState(false);
+  const [pendingBidId, setPendingBidId] = useState<string | null>(null);
 
   useEffect(() => {
     loadData();
@@ -98,6 +103,7 @@ export default function BidsPage() {
             technical_service_companies(company_name, phone, email, average_rating)
           `)
           .eq('request_id', requestId)
+          .neq('status', 'rejected')
           .order('bid_amount', { ascending: true, nullsFirst: false }),
         supabase
           .from('technical_service_requests')
@@ -107,8 +113,45 @@ export default function BidsPage() {
       ]);
 
       if (bidsRes.data) {
-        setBids(bidsRes.data);
-        const autoSelected = getAutoSelectedBids(bidsRes.data);
+        // Calculate ratings dynamically
+        const companyIds = [...new Set(bidsRes.data.map((b: any) => b.technical_service_companies?.company_name ? b.technical_service_companies : null).filter((c: any) => c).map((c: any) => c.company_name /* Wait, I don't have company_id in the selected fields! I need company_id. */))];
+        // Logic error above: I need company_id to query assignments. 'technical_service_bids' has 'company_id'.
+
+        const bidCompanyIds = [...new Set(bidsRes.data.map(b => b.company_id))];
+
+        let ratingsMap: Record<string, number> = {};
+
+        if (bidCompanyIds.length > 0) {
+          const { data: ratingsData } = await supabase
+            .from('technical_service_assignments')
+            .select('company_id, pm_rating')
+            .in('company_id', bidCompanyIds)
+            .not('pm_rating', 'is', null);
+
+          if (ratingsData) {
+            const stats: Record<string, { sum: number; count: number }> = {};
+            ratingsData.forEach((r: any) => {
+              if (!stats[r.company_id]) stats[r.company_id] = { sum: 0, count: 0 };
+              stats[r.company_id].sum += (Number(r.pm_rating) || 0);
+              stats[r.company_id].count++;
+            });
+
+            Object.keys(stats).forEach(cId => {
+              ratingsMap[cId] = stats[cId].sum / stats[cId].count;
+            });
+          }
+        }
+
+        const bidsWithRatings = bidsRes.data.map(bid => ({
+          ...bid,
+          technical_service_companies: bid.technical_service_companies ? {
+            ...bid.technical_service_companies,
+            average_rating: ratingsMap[bid.company_id] || bid.technical_service_companies.average_rating || 0
+          } : null
+        }));
+
+        setBids(bidsWithRatings);
+        const autoSelected = getAutoSelectedBids(bidsWithRatings);
         setAutoSelectedBids(autoSelected);
       }
       if (requestRes.data) {
@@ -179,13 +222,7 @@ export default function BidsPage() {
     }
   };
 
-  const handleAcceptBid = async (bidId: string) => {
-    const confirmed = window.confirm(
-      'Bu teklifi kabul ediyor musunuz? Diğer teklifler reddedilecektir.'
-    );
-
-    if (!confirmed) return;
-
+  const executeApproval = async (bidId: string) => {
     try {
       setSubmitting(true);
 
@@ -205,11 +242,15 @@ export default function BidsPage() {
 
       await Promise.all([acceptPromise, ...rejectPromises]);
 
+      const selectedBid = bids.find(b => b.id === bidId);
+      const newStatus = selectedBid?.bid_type === 'diagnostic_service' ? 'diagnostic_in_progress' : 'approved';
+
       const { error: requestError } = await supabase
         .from('technical_service_requests')
         .update({
-          status: 'approved',
+          status: newStatus,
           updated_at: new Date().toISOString(),
+          selected_bid_id: bidId // Also specifically marking which bid started this phase
         })
         .eq('id', requestId);
 
@@ -222,7 +263,82 @@ export default function BidsPage() {
       Alert.alert('Hata', 'Teklif kabul edilemedi');
     } finally {
       setSubmitting(false);
+      setShowDiagnosticModal(false);
+      setPendingBidId(null);
     }
+  };
+
+  const handleAcceptBid = async (bidId: string) => {
+    const selectedBid = bids.find(b => b.id === bidId);
+    if (!selectedBid) return;
+
+    // Special handling for Info Request
+    if (selectedBid.bid_type === 'info_request') {
+      const confirmed = window.confirm(
+        'Bu bilgi talebini onaylamak, diğer firmaların tekliflerini reddedecek ve süreci bu firma ile "Bilgi Bekleniyor" aşamasına taşıyacaktır. Devam etmek istiyor musunuz?'
+      );
+      if (!confirmed) return;
+
+      try {
+        setSubmitting(true);
+
+        // 1. Accept the info request bid
+        const acceptPromise = supabase
+          .from('technical_service_bids')
+          .update({ status: 'accepted' })
+          .eq('id', bidId);
+
+        // 2. Reject all other bids
+        const rejectPromises = displayBids
+          .filter(b => b.id !== bidId)
+          .map(bid =>
+            supabase
+              .from('technical_service_bids')
+              .update({ status: 'rejected' })
+              .eq('id', bid.id)
+          );
+
+        await Promise.all([acceptPromise, ...rejectPromises]);
+
+        // 3. Update request status to 'info_needed'
+        const { error: requestError } = await supabase
+          .from('technical_service_requests')
+          .update({
+            status: 'info_needed',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', requestId);
+
+        if (requestError) throw requestError;
+
+        Alert.alert(
+          'Bilgi Talebi Onaylandı',
+          'Talep "Bilgi Bekleniyor" durumuna alındı ve diğer firmalar elendi. Lütfen talep detayına gidip "Düzenle" diyerek eksik bilgileri ekleyiniz. Firma bu bilgilere göre yeni fiyat teklifi sunacaktır.'
+        );
+        router.back();
+      } catch (error) {
+        console.error('Error handling info request:', error);
+        Alert.alert('Hata', 'İşlem gerçekleştirilemedi');
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
+
+    // Special handling for Diagnostic Service (Operations)
+    if (userRole === 'operations' && selectedBid.bid_type === 'diagnostic_service') {
+      setPendingBidId(bidId);
+      setShowDiagnosticModal(true);
+      return;
+    }
+
+    // Standard handling for Quote or Diagnostic (Other roles)
+    const confirmed = window.confirm(
+      'Bu teklifi kabul ediyor musunuz? Diğer teklifler reddedilecektir.'
+    );
+
+    if (!confirmed) return;
+    executeApproval(bidId);
   };
 
   const getBidStatusColor = (status: string) => {
@@ -361,6 +477,16 @@ export default function BidsPage() {
                       ]}
                     >
                       <View style={styles.bidHeader}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          {bid.technical_service_companies && (
+                            <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#fffbeb', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, borderWidth: 1, borderColor: '#fcd34d' }}>
+                              <Star size={12} color="#f59e0b" fill="#f59e0b" />
+                              <Text style={{ fontSize: 12, fontWeight: '700', color: '#b45309', marginLeft: 4 }}>
+                                {(bid.technical_service_companies.average_rating || 0).toFixed(1)}
+                              </Text>
+                            </View>
+                          )}
+                        </View>
                         <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center', flex: 1, justifyContent: 'flex-end' }}>
                           {isAutoSelected && !isReadOnly && !isUserProjectManager && (
                             <View style={styles.selectedBadge}>
@@ -449,6 +575,40 @@ export default function BidsPage() {
           </ScrollView>
         </>
       )}
+      <Modal
+        visible={showDiagnosticModal}
+        transparent
+        animationType="fade"
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Onay</Text>
+            <Text style={styles.modalMessage}>Bu bir işe başlama değildir bu sadece servis hizmetidir.</Text>
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={() => {
+                  setShowDiagnosticModal(false);
+                  setPendingBidId(null);
+                }}
+              >
+                <Text style={styles.cancelButtonText}>Vazgeç</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.modalButton, styles.confirmButton]}
+                onPress={() => {
+                  if (pendingBidId) executeApproval(pendingBidId);
+                }}
+              >
+                <Text style={styles.confirmButtonText}>Onayla</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
     </SafeAreaView>
   );
 }
@@ -457,6 +617,65 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f9fafb',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: 'white',
+    borderRadius: 12,
+    padding: 20,
+    width: '100%',
+    maxWidth: 400,
+    gap: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.text,
+  },
+  modalMessage: {
+    fontSize: 16,
+    color: COLORS.text,
+    lineHeight: 24,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 12,
+    marginTop: 8,
+  },
+  modalButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    minWidth: 100,
+    alignItems: 'center',
+  },
+  cancelButton: {
+    backgroundColor: '#f3f4f6',
+  },
+  confirmButton: {
+    backgroundColor: COLORS.primary,
+  },
+  cancelButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.text,
+  },
+  confirmButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: 'white',
   },
   header: {
     flexDirection: 'row',

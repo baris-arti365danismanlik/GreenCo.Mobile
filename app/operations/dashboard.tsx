@@ -291,6 +291,7 @@ export default function OperationsDashboard() {
         )}
 
 
+
         <View style={styles.footer}>
           <Kadro360Logo size="small" variant="colored" />
         </View>

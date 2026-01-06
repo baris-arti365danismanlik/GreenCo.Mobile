@@ -7,7 +7,7 @@ import {
   ScrollView,
   ActivityIndicator,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { COLORS } from '@/constants/theme';
@@ -39,6 +39,7 @@ type Assignment = {
 
 export default function ActiveJobs() {
   const router = useRouter();
+  const params = useLocalSearchParams();
   const { profile } = useAuth();
   const [loading, setLoading] = useState(true);
   const [activeJobs, setActiveJobs] = useState<Assignment[]>([]);
@@ -46,8 +47,11 @@ export default function ActiveJobs() {
   const [showCompleted, setShowCompleted] = useState(false);
 
   useEffect(() => {
+    if (params.view === 'completed') {
+      setShowCompleted(true);
+    }
     loadJobs();
-  }, []);
+  }, [params.view]);
 
   const loadJobs = async () => {
     try {
@@ -97,8 +101,8 @@ export default function ActiveJobs() {
         .order('completion_date', { ascending: false })
         .limit(20);
 
-      setActiveJobs(active || []);
-      setCompletedJobs(completed || []);
+      setActiveJobs((active as any) || []);
+      setCompletedJobs((completed as any) || []);
     } catch (error) {
       console.error('Error loading jobs:', error);
     } finally {

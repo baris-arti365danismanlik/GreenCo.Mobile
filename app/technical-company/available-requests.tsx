@@ -19,6 +19,7 @@ import {
   CheckCircle,
   Users,
   DollarSign,
+  RefreshCcw,
 } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -26,10 +27,12 @@ type ServiceRequest = {
   id: string;
   title: string;
   description: string;
+  status: string;
   location_city: string;
   location_district: string;
   location_address: string;
   created_at: string;
+  updated_at: string;
   technical_service_types: {
     name: string;
   };
@@ -133,18 +136,20 @@ export default function AvailableRequests() {
 
       const authorizedBrandIds = new Set(authorizedBrands?.map(b => b.brand_id) || []);
 
-      // Get all bidding requests
-      const { data: allRequests, error: requestsError } = await supabase
+      // Get available (bidding/revision) requests
+      const { data: requestsData, error: requestsError } = await supabase
         .from('technical_service_requests')
         .select(`
           id,
           title,
           description,
+          status,
           location_city,
           location_district,
           location_address,
           send_to_authorized_service,
           created_at,
+          updated_at,
           service_type_id,
           brand_id,
           model_id,
@@ -152,26 +157,30 @@ export default function AvailableRequests() {
           asset_brands!technical_service_requests_brand_id_fkey(name),
           asset_models!technical_service_requests_model_id_fkey(name)
         `)
-        .eq('status', 'bidding')
+        .in('status', ['bidding', 'revision_requested', 'info_needed'])
         .order('created_at', { ascending: false });
 
       if (requestsError) throw requestsError;
 
-      // Get request IDs where this company already has a bid
-      const { data: existingBids, error: bidsError } = await supabase
+      // Get request IDs where this company already has a bid, with their creation dates and status
+      const { data: existingBids } = await supabase
         .from('technical_service_bids')
-        .select('request_id')
+        .select('request_id, created_at, status')
         .eq('company_id', profile.technical_company_id);
 
-      if (bidsError) throw bidsError;
-
-      const biddedRequestIds = new Set(existingBids?.map(b => b.request_id) || []);
+      // Map request_id to array of bid info
+      const bidsInfoByRequest = new Map<string, Array<{ created_at: string, status: string }>>();
+      existingBids?.forEach(bid => {
+        const infos = bidsInfoByRequest.get(bid.request_id) || [];
+        infos.push({ created_at: bid.created_at, status: bid.status });
+        bidsInfoByRequest.set(bid.request_id, infos);
+      });
 
       // Count companies per district+service_type for geographic filtering logic
       const districtCompanyCounts: Map<string, number> = new Map();
       const debugInfo: any[] = [];
 
-      for (const req of allRequests || []) {
+      for (const req of requestsData || []) {
         const key = `${req.location_district}_${req.service_type_id}`;
         if (!districtCompanyCounts.has(key)) {
           // First get all companies with this specialty
@@ -220,10 +229,10 @@ export default function AvailableRequests() {
         }
       }
 
-      console.log('🔍 COMPANY COUNT DEBUG:', JSON.stringify(debugInfo, null, 2));
+
 
       // Apply filtering criteria
-      const filteredRequests = (allRequests || []).filter((req) => {
+      const filteredRequests = (requestsData || []).filter((req) => {
         const decision: any = {
           req_id: req.id,
           req_district: req.location_district,
@@ -232,12 +241,52 @@ export default function AvailableRequests() {
           reason: []
         };
 
-        // Already bid on this request
-        if (biddedRequestIds.has(req.id)) {
-          decision.passed = false;
-          decision.reason.push('Already bid');
-          console.log('❌', decision);
-          return false;
+        const myBids = bidsInfoByRequest.get(req.id);
+        const hasBid = !!myBids && myBids.length > 0;
+
+        // Check if previously bid
+        if (hasBid) {
+          if (req.status === 'revision_requested') {
+            // Validating if we have responded to the revision
+            const requestUpdateTime = new Date(req.updated_at).getTime();
+            const hasNewResponse = myBids.some(b => new Date(b.created_at).getTime() > requestUpdateTime);
+
+            if (hasNewResponse) {
+              decision.passed = false;
+              decision.reason.push('Already responded to revision');
+              return false;
+            }
+          } else if (req.status === 'info_needed') {
+            // Only show if I have an ACCEPTED bid (meaning I am the one requested for info)
+            const hasAcceptedBid = myBids.some(b => b.status === 'accepted');
+
+            if (!hasAcceptedBid) {
+              // I am not the selected company
+              decision.passed = false;
+              decision.reason.push('Not selected for info');
+              return false;
+            }
+
+            // If I am selected, checking if I have responded with a NEW bid (post info request)
+            const requestUpdateTime = new Date(req.updated_at).getTime();
+            // Look for a bid created AFTER update time (which isn't the accepted one ideally, but any new bid works)
+            const hasNewResponse = myBids.some(b =>
+              new Date(b.created_at).getTime() > requestUpdateTime
+            );
+
+            if (hasNewResponse) {
+              decision.passed = false;
+              decision.reason.push('Already responded to info request');
+              return false;
+            }
+            // Show it!
+          } else {
+            // Normal bidding status - if bid exists, hide it (unless rejected? if rejected maybe show again? No, usually not.)
+            decision.passed = false;
+            decision.reason.push('Already bid');
+            return false;
+          }
+
         }
 
         // 1. Service specialty matching (must match first)
@@ -314,12 +363,12 @@ export default function AvailableRequests() {
         })
       );
 
-      console.log('Total bidding requests:', allRequests?.length || 0);
-      console.log('Already bid on:', biddedRequestIds.size);
+      console.log('Total bidding requests:', requestsData?.length || 0);
+      console.log('Already bid on:', bidsInfoByRequest.size);
       console.log('After geographic filter:', filteredRequests.length);
       console.log('Final available requests:', requestsWithBidInfo.length);
 
-      setRequests(requestsWithBidInfo);
+      setRequests(requestsWithBidInfo as any);
     } catch (error) {
       console.error('Error loading requests:', error);
     } finally {
@@ -358,12 +407,7 @@ export default function AvailableRequests() {
           <ActivityIndicator size="large" color={COLORS.primary} style={{ marginTop: 40 }} />
         ) : (
           <>
-            {/* Debug Info - Geçici */}
-            <View style={styles.debugInfo}>
-              <Text style={styles.debugTitle}>Debug Bilgisi:</Text>
-              <Text style={styles.debugText}>Bulunan Talep: {requests.length}</Text>
-              <Text style={styles.debugText}>Uzmanlıklar: {specialties.map(s => s.service_type).join(', ')}</Text>
-            </View>
+
 
             {requests.length === 0 ? (
               <View style={styles.emptyState}>
@@ -373,102 +417,108 @@ export default function AvailableRequests() {
                   Firmanızın uzmanlaştığı alanlardaki yeni talepler burada görünecek
                 </Text>
 
-            {specialties.length > 0 && (
-              <View style={styles.specialtiesInfo}>
-                <Text style={styles.specialtiesTitle}>Uzmanlaştığınız Alanlar:</Text>
-                <View style={styles.specialtiesList}>
-                  {specialties.map((spec, index) => (
-                    <View key={index} style={styles.specialtyBadge}>
-                      <CheckCircle size={14} color={COLORS.primary} />
-                      <Text style={styles.specialtyText}>{spec.service_type}</Text>
+                {specialties.length > 0 && (
+                  <View style={styles.specialtiesInfo}>
+                    <Text style={styles.specialtiesTitle}>Uzmanlaştığınız Alanlar:</Text>
+                    <View style={styles.specialtiesList}>
+                      {specialties.map((spec, index) => (
+                        <View key={index} style={styles.specialtyBadge}>
+                          <CheckCircle size={14} color={COLORS.primary} />
+                          <Text style={styles.specialtyText}>{spec.service_type}</Text>
+                        </View>
+                      ))}
                     </View>
-                  ))}
-                </View>
-                <Text style={styles.specialtiesNote}>
-                  Sadece bu kategorilerdeki talepler size gösterilir
-                </Text>
-              </View>
-            )}
+                    <Text style={styles.specialtiesNote}>
+                      Sadece bu kategorilerdeki talepler size gösterilir
+                    </Text>
+                  </View>
+                )}
               </View>
             ) : (
               <View style={styles.requestsList}>
-            {requests.map((request) => (
-              <TouchableOpacity
-                key={request.id}
-                style={styles.requestCard}
-                onPress={() =>
-                  router.push({
-                    pathname: '/technical-company/request-detail',
-                    params: { id: request.id },
-                  })
-                }
-              >
-                <View style={styles.requestHeader}>
-                  <View style={styles.serviceTypeBadge}>
-                    <Text style={styles.serviceTypeText}>
-                      {request.technical_service_types.name}
-                    </Text>
-                  </View>
-                  {request.send_to_authorized_service && (
-                    <View style={styles.authBadge}>
-                      <AlertCircle size={14} color="#dc2626" />
-                      <Text style={styles.authText}>Yetkili Servis</Text>
+                {requests.map((request) => (
+                  <TouchableOpacity
+                    key={request.id}
+                    style={styles.requestCard}
+                    onPress={() =>
+                      router.push({
+                        pathname: '/technical-company/request-detail',
+                        params: { id: request.id },
+                      })
+                    }
+                  >
+                    <View style={styles.requestHeader}>
+                      <View style={styles.serviceTypeBadge}>
+                        <Text style={styles.serviceTypeText}>
+                          {request.technical_service_types.name}
+                        </Text>
+                      </View>
+                      {request.send_to_authorized_service && (
+                        <View style={styles.authBadge}>
+                          <AlertCircle size={14} color="#dc2626" />
+                          <Text style={styles.authText}>Yetkili Servis</Text>
+                        </View>
+                      )}
+                      {request.status === 'revision_requested' && (
+                        <View style={[styles.authBadge, { backgroundColor: '#fef3c7' }]}>
+                          <RefreshCcw size={14} color="#d97706" />
+                          <Text style={[styles.authText, { color: '#d97706' }]}>Revizyon</Text>
+                        </View>
+                      )}
                     </View>
-                  )}
-                </View>
 
-                <Text style={styles.requestTitle}>{request.title}</Text>
-                <Text style={styles.requestDesc} numberOfLines={2}>
-                  {request.description}
-                </Text>
-
-                {request.asset_brands && (
-                  <View style={styles.assetInfo}>
-                    <Text style={styles.assetText}>
-                      {`${request.asset_brands.name}${request.asset_models ? ` - ${request.asset_models.name}` : ''}`}
+                    <Text style={styles.requestTitle}>{request.title}</Text>
+                    <Text style={styles.requestDesc} numberOfLines={2}>
+                      {request.description}
                     </Text>
-                  </View>
-                )}
 
-                <View style={styles.requestMeta}>
-                  <View style={styles.metaItem}>
-                    <MapPin size={14} color={COLORS.textLight} />
-                    <Text style={styles.metaText}>
-                      {request.location_city}, {request.location_district}
-                    </Text>
-                  </View>
-                  <View style={styles.metaItem}>
-                    <Calendar size={14} color={COLORS.textLight} />
-                    <Text style={styles.metaText}>
-                      {formatDate(request.created_at)}
-                    </Text>
-                  </View>
-                </View>
-
-                {(request.bid_count !== undefined && request.bid_count > 0) && (
-                  <View style={styles.bidInfo}>
-                    <View style={styles.bidInfoItem}>
-                      <Users size={14} color={COLORS.primary} />
-                      <Text style={styles.bidInfoText}>
-                        {request.bid_count} teklif
-                      </Text>
-                    </View>
-                    {request.min_bid_amount && (
-                      <View style={styles.bidInfoItem}>
-                        <DollarSign size={14} color={COLORS.primary} />
-                        <Text style={styles.bidInfoText}>
-                          Min: {new Intl.NumberFormat('tr-TR', {
-                            style: 'currency',
-                            currency: 'TRY',
-                            minimumFractionDigits: 0,
-                          }).format(request.min_bid_amount)}
+                    {request.asset_brands && (
+                      <View style={styles.assetInfo}>
+                        <Text style={styles.assetText}>
+                          {`${request.asset_brands.name}${request.asset_models ? ` - ${request.asset_models.name}` : ''}`}
                         </Text>
                       </View>
                     )}
-                  </View>
-                )}
-              </TouchableOpacity>
-            ))}
+
+                    <View style={styles.requestMeta}>
+                      <View style={styles.metaItem}>
+                        <MapPin size={14} color={COLORS.textLight} />
+                        <Text style={styles.metaText}>
+                          {request.location_city}, {request.location_district}
+                        </Text>
+                      </View>
+                      <View style={styles.metaItem}>
+                        <Calendar size={14} color={COLORS.textLight} />
+                        <Text style={styles.metaText}>
+                          {formatDate(request.created_at)}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {(request.bid_count !== undefined && request.bid_count > 0) && (
+                      <View style={styles.bidInfo}>
+                        <View style={styles.bidInfoItem}>
+                          <Users size={14} color={COLORS.primary} />
+                          <Text style={styles.bidInfoText}>
+                            {request.bid_count} teklif
+                          </Text>
+                        </View>
+                        {request.min_bid_amount && (
+                          <View style={styles.bidInfoItem}>
+                            <DollarSign size={14} color={COLORS.primary} />
+                            <Text style={styles.bidInfoText}>
+                              Min: {new Intl.NumberFormat('tr-TR', {
+                                style: 'currency',
+                                currency: 'TRY',
+                                minimumFractionDigits: 0,
+                              }).format(request.min_bid_amount)}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                ))}
               </View>
             )}
           </>

@@ -183,7 +183,9 @@ export default function DiagnosticJobs() {
               <View style={styles.jobHeader}>
                 <View style={styles.serviceTypeBadge}>
                   <Stethoscope size={16} color="#6366f1" />
-                  <Text style={styles.serviceTypeText}>{job.technical_service_types.name}</Text>
+                  <Text style={styles.serviceTypeText}>
+                    {job.technical_service_types?.name || 'Bilinmiyor'}
+                  </Text>
                 </View>
               </View>
 
@@ -194,13 +196,13 @@ export default function DiagnosticJobs() {
 
               <View style={styles.infoRow}>
                 <Building2 size={16} color={COLORS.textLight} />
-                <Text style={styles.infoText}>{job.companies.name}</Text>
+                <Text style={styles.infoText}>{job.companies?.name || '-'}</Text>
               </View>
 
               {job.projects_greenco && (
                 <View style={styles.infoRow}>
                   <FileText size={16} color={COLORS.textLight} />
-                  <Text style={styles.infoText}>{job.projects_greenco.name}</Text>
+                  <Text style={styles.infoText}>{job.projects_greenco?.name || '-'}</Text>
                 </View>
               )}
 

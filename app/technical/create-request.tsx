@@ -417,6 +417,7 @@ export default function CreateTechnicalRequest() {
 
       if (data) {
         setModels([...models, data]);
+        setFilteredModels([...filteredModels, data]); // Update filtered list as well
         setFormData({ ...formData, model_id: data.id });
       }
     } catch (error: any) {

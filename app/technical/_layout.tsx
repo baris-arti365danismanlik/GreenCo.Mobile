@@ -1,4 +1,4 @@
-import { Stack } from 'expo-router';
+import { Stack, useRootNavigationState } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'expo-router';
 import { useEffect } from 'react';
@@ -6,12 +6,15 @@ import { useEffect } from 'react';
 export default function TechnicalLayout() {
   const { profile } = useAuth();
   const router = useRouter();
+  const rootNavigationState = useRootNavigationState();
 
   useEffect(() => {
+    if (!rootNavigationState?.key) return;
+
     if (!profile?.service_modules?.includes('technical')) {
       router.replace('/(tabs)');
     }
-  }, [profile]);
+  }, [profile, rootNavigationState]);
 
   return (
     <Stack

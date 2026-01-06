@@ -352,6 +352,14 @@ export default function AdminScreen() {
           </View>
         </TouchableOpacity>
 
+
+
+
+
+
+
+
+
         <Text style={[styles.sectionTitle, { marginTop: 20 }]}>BİRİM BAZLI İŞ SİSTEMİ</Text>
 
         <TouchableOpacity
@@ -359,7 +367,7 @@ export default function AdminScreen() {
           onPress={() => router.push('/admin/unit-work-orders')}
         >
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-            <ClipboardList size={24} color="#8b5cf6" />
+            <FileText size={24} color="#8b5cf6" />
             <View>
               <Text style={styles.cardTitle}>İş Emirleri</Text>
               <Text style={styles.cardSub}>Onayla ve fiyatlandır</Text>

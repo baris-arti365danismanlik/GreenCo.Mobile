@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { ArrowLeft, Plus, Trash2, Send } from 'lucide-react-native';
+import { ArrowLeft, Plus, Trash2, Send, Building, Pencil } from 'lucide-react-native';
 import { COLORS } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -51,6 +51,7 @@ export default function CreateRequestScreen() {
   const params = useLocalSearchParams();
   const editId = params.editId as string;
   const projectIdParam = params.projectId as string;
+  const source = params.source as string; // 'technical' olabilir (personel kısmı gizlenir)
   const { profile } = useAuth();
   const [loading, setLoading] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
@@ -70,6 +71,7 @@ export default function CreateRequestScreen() {
   const [showNewTypeModal, setShowNewTypeModal] = useState(false);
   const [newTypeName, setNewTypeName] = useState('');
   const [addingNewType, setAddingNewType] = useState(false);
+  const [companyName, setCompanyName] = useState('');
 
   const [projectCity, setProjectCity] = useState('');
   const [projectDistrict, setProjectDistrict] = useState('');
@@ -98,6 +100,13 @@ export default function CreateRequestScreen() {
   useEffect(() => {
     loadData();
   }, []);
+
+  useEffect(() => {
+    if (params.isNewProject === 'true') {
+      setIsNewProject(true);
+      setStep('form');
+    }
+  }, [params.isNewProject]);
 
   useEffect(() => {
     if (editId) {
@@ -209,6 +218,18 @@ export default function CreateRequestScreen() {
       if (typesRes.data) {
         setPersonnelTypes(typesRes.data);
         setFilteredPersonnelTypes(typesRes.data);
+      }
+      if (profile?.company_id) {
+        // Firma ismini çek
+        const { data: companyData } = await supabase
+          .from('companies')
+          .select('name')
+          .eq('id', profile.company_id)
+          .single();
+
+        if (companyData) {
+          setCompanyName(companyData.name);
+        }
       }
     } catch (error) {
       console.error('Veri yükleme hatası:', error);
@@ -503,7 +524,8 @@ export default function CreateRequestScreen() {
     }
 
     const emptyPosition = positions.find(p => !p.type || !p.count || parseInt(p.count) <= 0);
-    if (emptyPosition) {
+    // Teknik modda personel zorunluluğu yok
+    if (source !== 'technical' && emptyPosition) {
       if (Platform.OS === 'web') {
         window.alert('Lütfen tüm personel pozisyonları için meslek türü ve adet bilgilerini doldurun');
       }
@@ -529,7 +551,7 @@ export default function CreateRequestScreen() {
         }
       }
 
-      const personnelPositionsData = positions.map(p => {
+      const personnelPositionsData = source === 'technical' ? [] : positions.map(p => {
         const positionData: any = {
           personnel_type_id: p.type,
           count: parseInt(p.count),
@@ -708,10 +730,14 @@ export default function CreateRequestScreen() {
 
       <SafeAreaView style={styles.container} edges={['top']}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => isEditMode ? router.back() : setStep('project-type')}>
+          <TouchableOpacity onPress={() => (isEditMode || isNewProject || params.isNewProject === 'true' || source === 'technical') ? router.back() : setStep('project-type')}>
             <ArrowLeft size={24} color={COLORS.secondary} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>{isEditMode ? 'Personel Talebini Düzenle' : 'Personel Talebi Oluştur'}</Text>
+          <Text style={styles.headerTitle}>
+            {source === 'technical'
+              ? 'Proje Oluşturma Talebi'
+              : (isEditMode ? 'Personel Talebini Düzenle' : 'Personel Talebi Oluştur')}
+          </Text>
           <View style={{ width: 24 }} />
         </View>
 
@@ -727,6 +753,22 @@ export default function CreateRequestScreen() {
             showsVerticalScrollIndicator={false}
           >
             <View style={styles.section}>
+              {isNewProject && companyName && (
+                <View style={styles.companyCard}>
+                  <View style={styles.companyIconContainer}>
+                    <Building size={24} color={COLORS.primary} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.companyLabel}>Seçili Firma</Text>
+                    <Text style={styles.companyNameValue}>{companyName}</Text>
+                  </View>
+                  <TouchableOpacity style={styles.changeCompanyButton}>
+                    <Pencil size={14} color={COLORS.textLight} />
+                    <Text style={styles.changeCompanyText}>Değiştir</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
               <Text style={styles.sectionTitle}>PROJE BİLGİLERİ</Text>
 
               {!isNewProject ? (
@@ -998,151 +1040,153 @@ export default function CreateRequestScreen() {
               )}
             </View>
 
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>TALEP EDİLEN PERSONEL</Text>
+            {source !== 'technical' && (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>TALEP EDİLEN PERSONEL</Text>
 
-              {positions.map((position, index) => {
-                const selectedType = personnelTypes.find(t => t.id === position.type);
-                const headerTitle = !isNewProject && selectedType && position.count
-                  ? `Mevcut Personel #${index + 1}: ${position.count} ${selectedType.name}`
-                  : `Personel #${index + 1}`;
+                {positions.map((position, index) => {
+                  const selectedType = personnelTypes.find(t => t.id === position.type);
+                  const headerTitle = !isNewProject && selectedType && position.count
+                    ? `Mevcut Personel #${index + 1}: ${position.count} ${selectedType.name}`
+                    : `Personel #${index + 1}`;
 
-                return (
-                  <View key={index} style={styles.positionCard}>
-                    <View style={styles.positionHeader}>
-                      <View style={styles.positionHeaderLeft}>
-                        <Text style={styles.positionTitle}>{headerTitle}</Text>
-                        {!isNewProject && selectedType && position.isEditing !== true && (
+                  return (
+                    <View key={index} style={styles.positionCard}>
+                      <View style={styles.positionHeader}>
+                        <View style={styles.positionHeaderLeft}>
+                          <Text style={styles.positionTitle}>{headerTitle}</Text>
+                          {!isNewProject && selectedType && position.isEditing !== true && (
+                            <TouchableOpacity
+                              style={styles.editButton}
+                              onPress={() => togglePositionEdit(index)}
+                            >
+                              <Text style={styles.editButtonText}>Değiştir</Text>
+                            </TouchableOpacity>
+                          )}
+                        </View>
+                        {positions.length > 1 && (
                           <TouchableOpacity
-                            style={styles.editButton}
-                            onPress={() => togglePositionEdit(index)}
+                            style={styles.removeButton}
+                            onPress={() => removePosition(index)}
                           >
-                            <Text style={styles.editButtonText}>Değiştir</Text>
+                            <Text style={styles.removeButtonText}>Kaldır</Text>
                           </TouchableOpacity>
                         )}
                       </View>
-                      {positions.length > 1 && (
-                        <TouchableOpacity
-                          style={styles.removeButton}
-                          onPress={() => removePosition(index)}
-                        >
-                          <Text style={styles.removeButtonText}>Kaldır</Text>
-                        </TouchableOpacity>
+
+                      {(isNewProject || position.isEditing === true) && (
+                        <>
+                          <View style={styles.field}>
+                            <Text style={styles.label}>Meslek Türü <Text style={styles.required}>*</Text></Text>
+                            {position.type ? (
+                              <View style={styles.selectedContainer}>
+                                <Text style={styles.selectedValue}>
+                                  {personnelTypes.find(t => t.id === position.type)?.name}
+                                </Text>
+                                <TouchableOpacity
+                                  onPress={() => {
+                                    updatePosition(index, 'type', '');
+                                    setPersonnelTypeSearch('');
+                                  }}
+                                  style={styles.clearButton}
+                                >
+                                  <Text style={styles.clearButtonText}>Değiştir</Text>
+                                </TouchableOpacity>
+                              </View>
+                            ) : (
+                              <>
+                                <TextInput
+                                  style={styles.input}
+                                  placeholder="Meslek ara..."
+                                  value={personnelTypeSearch}
+                                  onChangeText={setPersonnelTypeSearch}
+                                />
+                                <ScrollView style={styles.typeScrollView} nestedScrollEnabled>
+                                  <View style={styles.selectContainer}>
+                                    {filteredPersonnelTypes.map((type) => (
+                                      <TouchableOpacity
+                                        key={type.id}
+                                        style={styles.selectItem}
+                                        onPress={() => {
+                                          updatePosition(index, 'type', type.id);
+                                          setPersonnelTypeSearch('');
+                                        }}
+                                      >
+                                        <Text style={styles.selectItemText}>
+                                          {type.name}
+                                        </Text>
+                                      </TouchableOpacity>
+                                    ))}
+                                  </View>
+                                </ScrollView>
+                                <TouchableOpacity
+                                  style={styles.newProfileButton}
+                                  onPress={() => setShowNewTypeModal(true)}
+                                >
+                                  <Plus size={16} color={COLORS.primary} />
+                                  <Text style={styles.newProfileText}>Yeni Meslek Türü Ekle</Text>
+                                </TouchableOpacity>
+                              </>
+                            )}
+                          </View>
+
+                          <View style={styles.field}>
+                            <Text style={styles.label}>Personel Adedi <Text style={styles.required}>*</Text></Text>
+                            <TextInput
+                              style={styles.input}
+                              placeholder="Örn: 5"
+                              keyboardType="numeric"
+                              value={position.count}
+                              onChangeText={(value) => updatePosition(index, 'count', value)}
+                            />
+                          </View>
+
+                          <View style={styles.field}>
+                            <Text style={styles.label}>Sabıka Kaydı</Text>
+                            <View style={styles.selectContainer}>
+                              {CRIMINAL_RECORD_OPTIONS.map((option) => (
+                                <TouchableOpacity
+                                  key={option}
+                                  style={[
+                                    styles.selectItem,
+                                    position.criminal_record === option && styles.selectItemActive,
+                                  ]}
+                                  onPress={() => updatePosition(index, 'criminal_record', option)}
+                                >
+                                  <Text
+                                    style={[
+                                      styles.selectItemText,
+                                      position.criminal_record === option && styles.selectItemTextActive,
+                                    ]}
+                                  >
+                                    Sabıka Kaydı {option.toUpperCase()}
+                                  </Text>
+                                </TouchableOpacity>
+                              ))}
+                            </View>
+                          </View>
+
+                          <View style={styles.field}>
+                            <Text style={styles.label}>Talep Edilen Sertifikalar</Text>
+                            <TextInput
+                              style={styles.input}
+                              placeholder="Virgülle ayırın (Örn: İş Güvenliği, Forklift)"
+                              value={position.certificates}
+                              onChangeText={(value) => updatePosition(index, 'certificates', value)}
+                            />
+                          </View>
+                        </>
                       )}
                     </View>
+                  );
+                })}
 
-                    {(isNewProject || position.isEditing === true) && (
-                      <>
-                        <View style={styles.field}>
-                          <Text style={styles.label}>Meslek Türü <Text style={styles.required}>*</Text></Text>
-                          {position.type ? (
-                            <View style={styles.selectedContainer}>
-                              <Text style={styles.selectedValue}>
-                                {personnelTypes.find(t => t.id === position.type)?.name}
-                              </Text>
-                              <TouchableOpacity
-                                onPress={() => {
-                                  updatePosition(index, 'type', '');
-                                  setPersonnelTypeSearch('');
-                                }}
-                                style={styles.clearButton}
-                              >
-                                <Text style={styles.clearButtonText}>Değiştir</Text>
-                              </TouchableOpacity>
-                            </View>
-                          ) : (
-                            <>
-                              <TextInput
-                                style={styles.input}
-                                placeholder="Meslek ara..."
-                                value={personnelTypeSearch}
-                                onChangeText={setPersonnelTypeSearch}
-                              />
-                              <ScrollView style={styles.typeScrollView} nestedScrollEnabled>
-                                <View style={styles.selectContainer}>
-                                  {filteredPersonnelTypes.map((type) => (
-                                    <TouchableOpacity
-                                      key={type.id}
-                                      style={styles.selectItem}
-                                      onPress={() => {
-                                        updatePosition(index, 'type', type.id);
-                                        setPersonnelTypeSearch('');
-                                      }}
-                                    >
-                                      <Text style={styles.selectItemText}>
-                                        {type.name}
-                                      </Text>
-                                    </TouchableOpacity>
-                                  ))}
-                                </View>
-                              </ScrollView>
-                              <TouchableOpacity
-                                style={styles.newProfileButton}
-                                onPress={() => setShowNewTypeModal(true)}
-                              >
-                                <Plus size={16} color={COLORS.primary} />
-                                <Text style={styles.newProfileText}>Yeni Meslek Türü Ekle</Text>
-                              </TouchableOpacity>
-                            </>
-                          )}
-                        </View>
-
-                        <View style={styles.field}>
-                          <Text style={styles.label}>Personel Adedi <Text style={styles.required}>*</Text></Text>
-                          <TextInput
-                            style={styles.input}
-                            placeholder="Örn: 5"
-                            keyboardType="numeric"
-                            value={position.count}
-                            onChangeText={(value) => updatePosition(index, 'count', value)}
-                          />
-                        </View>
-
-                        <View style={styles.field}>
-                          <Text style={styles.label}>Sabıka Kaydı</Text>
-                          <View style={styles.selectContainer}>
-                            {CRIMINAL_RECORD_OPTIONS.map((option) => (
-                              <TouchableOpacity
-                                key={option}
-                                style={[
-                                  styles.selectItem,
-                                  position.criminal_record === option && styles.selectItemActive,
-                                ]}
-                                onPress={() => updatePosition(index, 'criminal_record', option)}
-                              >
-                                <Text
-                                  style={[
-                                    styles.selectItemText,
-                                    position.criminal_record === option && styles.selectItemTextActive,
-                                  ]}
-                                >
-                                  Sabıka Kaydı {option.toUpperCase()}
-                                </Text>
-                              </TouchableOpacity>
-                            ))}
-                          </View>
-                        </View>
-
-                        <View style={styles.field}>
-                          <Text style={styles.label}>Talep Edilen Sertifikalar</Text>
-                          <TextInput
-                            style={styles.input}
-                            placeholder="Virgülle ayırın (Örn: İş Güvenliği, Forklift)"
-                            value={position.certificates}
-                            onChangeText={(value) => updatePosition(index, 'certificates', value)}
-                          />
-                        </View>
-                      </>
-                    )}
-                  </View>
-                );
-              })}
-
-              <TouchableOpacity style={styles.addPositionButton} onPress={addPosition}>
-                <Plus size={20} color={COLORS.primary} />
-                <Text style={styles.addPositionText}>Personel Ekle</Text>
-              </TouchableOpacity>
-            </View>
+                <TouchableOpacity style={styles.addPositionButton} onPress={addPosition}>
+                  <Plus size={20} color={COLORS.primary} />
+                  <Text style={styles.addPositionText}>Personel Ekle</Text>
+                </TouchableOpacity>
+              </View>
+            )}
 
             <View style={styles.section}>
               <Text style={styles.label}>Notlar (İsteğe bağlı)</Text>
@@ -1587,5 +1631,47 @@ const styles = StyleSheet.create({
     color: 'white',
     fontWeight: '600',
     fontSize: 16,
+  },
+  companyCard: {
+    backgroundColor: 'white',
+    padding: 16,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    gap: 12,
+  },
+  companyIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 8,
+    backgroundColor: COLORS.primary + '15',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  companyLabel: {
+    fontSize: 12,
+    color: COLORS.textLight,
+    marginBottom: 2,
+  },
+  companyNameValue: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORS.secondary,
+  },
+  changeCompanyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    padding: 8,
+    backgroundColor: COLORS.bg,
+    borderRadius: 6,
+  },
+  changeCompanyText: {
+    fontSize: 12,
+    color: COLORS.textLight,
+    fontWeight: '600',
   },
 });

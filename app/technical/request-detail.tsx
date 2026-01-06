@@ -11,8 +11,9 @@ import {
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { COLORS } from '@/constants/theme';
-import { ArrowLeft, Building2, MapPin, FileText, Send, CheckCircle, Calendar, Users, DollarSign, MessageSquare, Stethoscope, AlertCircle, Clock } from 'lucide-react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { ArrowLeft, Building2, MapPin, FileText, Send, CheckCircle, Calendar, Users, DollarSign, MessageSquare, Stethoscope, AlertCircle, Clock, Edit, Save, X } from 'lucide-react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { TextInput } from 'react-native';
 
 type Request = {
   id: string;
@@ -23,8 +24,10 @@ type Request = {
   location_district: string;
   location_address: string;
   created_at: string;
+  diagnostic_report?: string | null;
   companies?: {
     name: string;
+    commission_rate?: number;
   } | null;
   technical_service_types?: {
     name: string;
@@ -42,6 +45,8 @@ export default function RequestDetail() {
   const [updating, setUpdating] = useState(false);
   const [isUserProjectManager, setIsUserProjectManager] = useState(false);
   const [isUserAdmin, setIsUserAdmin] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [descriptionText, setDescriptionText] = useState('');
   const [bids, setBids] = useState<any[]>([]);
   const [bidStats, setBidStats] = useState<{
     count: number;
@@ -78,6 +83,7 @@ export default function RequestDetail() {
 
       if (error) throw error;
       setRequest(data);
+      if (data?.description) setDescriptionText(data.description);
 
       if (data?.project_id) {
         const { data: pmData } = await supabase
@@ -99,7 +105,7 @@ export default function RequestDetail() {
 
       setIsUserAdmin(profile?.role === 'admin');
 
-      if (data?.status !== 'pending_review' && data?.status !== 'info_needed') {
+      if (data?.status !== 'pending_review') {
         const { data: bidsData } = await supabase
           .from('technical_service_bids')
           .select('*, technical_service_companies(company_name, phone, email)')
@@ -172,6 +178,30 @@ export default function RequestDetail() {
       cancelled: 'İptal Edildi',
     };
     return labels[status] || status;
+  };
+
+  const handleSaveDescription = async () => {
+    try {
+      setUpdating(true);
+      const { error } = await supabase
+        .from('technical_service_requests')
+        .update({
+          description: descriptionText,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', id);
+
+      if (error) throw error;
+      Alert.alert('Başarılı', 'Açıklama güncellendi.');
+      setEditMode(false);
+      setRequest(prev => prev ? ({ ...prev, description: descriptionText }) : null);
+
+    } catch (e) {
+      Alert.alert('Hata', 'Güncelleme başarısız');
+      console.error(e);
+    } finally {
+      setUpdating(false);
+    }
   };
 
   const handleStartBidding = async () => {
@@ -383,7 +413,11 @@ export default function RequestDetail() {
             <Building2 size={20} color={COLORS.textLight} />
             <View style={styles.infoContent}>
               <Text style={styles.infoLabel}>Firma</Text>
-              <Text style={styles.infoValue}>{request.companies?.name || '-'}</Text>
+              <Text style={styles.infoValue}>
+                {request.companies?.name
+                  ? (request.companies.name.substring(0, 2) + '*'.repeat(Math.max(0, request.companies.name.length - 2)))
+                  : '-'}
+              </Text>
             </View>
           </View>
 
@@ -417,9 +451,91 @@ export default function RequestDetail() {
           </View>
 
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Açıklama</Text>
-            <Text style={styles.description}>{request.description}</Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <Text style={styles.sectionTitle}>Açıklama</Text>
+              {request.status === 'info_needed' && !editMode && (
+                <TouchableOpacity
+                  onPress={() => setEditMode(true)}
+                  style={{ padding: 4 }}
+                >
+                  <Edit size={18} color={COLORS.primary} />
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {editMode ? (
+              <View>
+                <TextInput
+                  multiline
+                  value={descriptionText}
+                  onChangeText={setDescriptionText}
+                  style={{
+                    borderWidth: 1,
+                    borderColor: COLORS.border,
+                    borderRadius: 8,
+                    padding: 12,
+                    minHeight: 100,
+                    textAlignVertical: 'top',
+                    fontSize: 15,
+                    color: COLORS.text,
+                    backgroundColor: '#fff'
+                  }}
+                />
+                <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
+                  <TouchableOpacity
+                    onPress={() => {
+                      setEditMode(false);
+                      setDescriptionText(request.description);
+                    }}
+                    style={{
+                      paddingVertical: 6,
+                      paddingHorizontal: 12,
+                      borderRadius: 6,
+                      backgroundColor: '#f3f4f6',
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 4
+                    }}
+                  >
+                    <X size={16} color={COLORS.text} />
+                    <Text style={{ color: COLORS.text, fontSize: 13, fontWeight: '600' }}>İptal</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={handleSaveDescription}
+                    style={{
+                      paddingVertical: 6,
+                      paddingHorizontal: 12,
+                      borderRadius: 6,
+                      backgroundColor: COLORS.primary,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 4
+                    }}
+                  >
+                    {updating ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <Save size={16} color="#fff" />
+                    )}
+                    <Text style={{ color: '#fff', fontSize: 13, fontWeight: '600' }}>Kaydet</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : (
+              <Text style={styles.description}>{request.description}</Text>
+            )}
           </View>
+
+          {/* Diagnostic Report Display */}
+          {request.diagnostic_report && (
+            <View style={[styles.section, { backgroundColor: '#eff6ff', borderColor: '#bfdbfe', borderWidth: 1 }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                <Stethoscope size={20} color={COLORS.primary} />
+                <Text style={[styles.sectionTitle, { color: '#1e40af', marginBottom: 0 }]}>Tanı Raporu</Text>
+              </View>
+              <Text style={[styles.description, { color: '#1e3a8a' }]}>{request.diagnostic_report}</Text>
+            </View>
+          )}
 
           {request.status === 'awaiting_customer_decision' && isUserProjectManager ? (
             <View style={styles.infoCard}>
@@ -474,8 +590,21 @@ export default function RequestDetail() {
                       {acceptedBid.estimated_duration && (
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                           <Clock size={18} color={COLORS.textLight} />
-                          <Text style={{ color: COLORS.textLight }}>Tahmini Süre:</Text>
-                          <Text style={{ fontSize: 15, color: COLORS.secondary, fontWeight: '500' }}>{acceptedBid.estimated_duration}</Text>
+                          <Text style={{ color: COLORS.textLight }}>Çalışma Takvimi:</Text>
+                          {acceptedBid.estimated_duration.includes('/') ? (
+                            <View>
+                              <Text style={{ fontSize: 14, color: COLORS.secondary, fontWeight: '500' }}>
+                                Başlangıç: {new Date(acceptedBid.estimated_duration.split('/')[0]).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })}
+                              </Text>
+                              <Text style={{ fontSize: 14, color: COLORS.secondary, fontWeight: '500' }}>
+                                Bitiş: {new Date(acceptedBid.estimated_duration.split('/')[1]).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })}
+                              </Text>
+                            </View>
+                          ) : (
+                            <Text style={{ fontSize: 15, color: COLORS.secondary, fontWeight: '500' }}>
+                              {acceptedBid.estimated_duration}
+                            </Text>
+                          )}
                         </View>
                       )}
 
@@ -537,7 +666,7 @@ export default function RequestDetail() {
                   )}
                 </View>
 
-                {bidStats.bestBid && (
+                {isUserAdmin && bidStats.bestBid && (
                   <View style={styles.minBidSection}>
                     <View style={styles.minBidRow}>
                       <View>
@@ -811,6 +940,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: COLORS.primary,
   },
+
   bidStatsBox: {
     backgroundColor: '#f9fafb',
     borderRadius: 12,

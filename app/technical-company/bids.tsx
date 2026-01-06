@@ -35,6 +35,7 @@ type Bid = {
   technical_service_requests: {
     id: string;
     title: string;
+    status: string; // Added status field
     technical_service_types: {
       name: string;
     };
@@ -89,7 +90,7 @@ export default function MyBids() {
 
       const { data: requestsData, error: requestsError } = await supabase
         .from('technical_service_requests')
-        .select('id, title, service_type_id')
+        .select('id, title, service_type_id, status')
         .in('id', requestIds);
 
       if (requestsError) {
@@ -132,6 +133,7 @@ export default function MyBids() {
           technical_service_requests: {
             id: request?.id || '',
             title: request?.title || 'Bilinmiyor',
+            status: request?.status || '',
             technical_service_types: {
               name: serviceTypeName || 'Bilinmiyor'
             }
@@ -455,6 +457,21 @@ export default function MyBids() {
                           <CheckCircle size={18} color="white" />
                           <Text style={styles.startJobBtnText}>İşi Görüntüle</Text>
                         </TouchableOpacity>
+                      ) : bid.bid_type === 'diagnostic_service' ? (
+                        bid.technical_service_requests.status === 'diagnostic_in_progress' ? (
+                          <TouchableOpacity
+                            style={[styles.startJobBtn, { backgroundColor: '#6366f1' }]}
+                            onPress={() => router.push('/technical-company/diagnostic-jobs')}
+                          >
+                            <Stethoscope size={18} color="white" />
+                            <Text style={styles.startJobBtnText}>Tanı Raporu Yaz</Text>
+                          </TouchableOpacity>
+                        ) : (
+                          <View style={[styles.startJobBtn, { backgroundColor: '#9ca3af' }]}>
+                            <CheckCircle size={18} color="white" />
+                            <Text style={styles.startJobBtnText}>Rapor Gönderildi</Text>
+                          </View>
+                        )
                       ) : (
                         <TouchableOpacity
                           style={styles.startJobBtn}

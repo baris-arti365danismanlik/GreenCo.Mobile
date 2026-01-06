@@ -285,12 +285,18 @@ export default function TechnicalRequests() {
 
                   <View style={styles.requestMeta}>
                     <Text style={styles.metaLabel}>Firma:</Text>
-                    <Text style={styles.metaValue}>{request.companies?.name || '-'}</Text>
+                    <Text style={styles.metaValue}>
+                      {request.companies?.name
+                        ? (request.companies.name.substring(0, 2) + '*'.repeat(Math.max(0, request.companies.name.length - 2)))
+                        : '-'}
+                    </Text>
                   </View>
 
                   <View style={styles.requestMeta}>
                     <Text style={styles.metaLabel}>Hizmet:</Text>
-                    <Text style={styles.metaValue}>{request.technical_service_types?.name || '-'}</Text>
+                    <Text style={styles.metaValue}>
+                      {request.technical_service_types?.name || '-'}
+                    </Text>
                   </View>
 
                   <View style={styles.requestMeta}>

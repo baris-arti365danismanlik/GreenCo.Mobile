@@ -179,7 +179,7 @@ export default function AllRequests() {
 
                             <View style={styles.requestMeta}>
                                 <Text style={styles.metaLabel}>Firma:</Text>
-                                <Text style={styles.metaValue}>{request.companies?.name || '-'}</Text>
+                                <Text style={styles.metaValue}>{request.technical_service_types?.name || '-'}</Text>
                             </View>
 
                             <View style={styles.requestMeta}>

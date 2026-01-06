@@ -7,7 +7,7 @@ import {
   ScrollView,
   ActivityIndicator,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { COLORS } from '@/constants/theme';
@@ -21,14 +21,17 @@ import {
   Building2,
   Award,
   LogOut,
+  Stethoscope,
 } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useCallback } from 'react';
 
 type Stats = {
   available_requests: number;
   my_bids: number;
   active_jobs: number;
   completed_jobs: number;
+  diagnostic_jobs: number;
 };
 
 type CompanyInfo = {
@@ -36,6 +39,7 @@ type CompanyInfo = {
   average_rating: number;
   total_jobs: number;
 };
+// ... (rest of types)
 
 export default function TechnicalCompanyDashboard() {
   const router = useRouter();
@@ -46,12 +50,15 @@ export default function TechnicalCompanyDashboard() {
     my_bids: 0,
     active_jobs: 0,
     completed_jobs: 0,
+    diagnostic_jobs: 0,
   });
   const [companyInfo, setCompanyInfo] = useState<CompanyInfo | null>(null);
 
-  useEffect(() => {
-    loadDashboardData();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      loadDashboardData();
+    }, [])
+  );
 
   const loadDashboardData = async () => {
     try {
@@ -74,7 +81,27 @@ export default function TechnicalCompanyDashboard() {
       }
 
       if (companyData) {
-        setCompanyInfo(companyData);
+        // Calculate stats dynamically from assignments to ensure accuracy
+        const { data: assignmentStats } = await supabase
+          .from('technical_service_assignments')
+          .select('pm_rating')
+          .eq('company_id', technicalCompanyId)
+          .not('pm_rating', 'is', null);
+
+        let dynamicAvg = 0;
+        let dynamicCount = 0;
+
+        if (assignmentStats && assignmentStats.length > 0) {
+          dynamicCount = assignmentStats.length;
+          const sum = assignmentStats.reduce((acc, curr) => acc + (Number(curr.pm_rating) || 0), 0);
+          dynamicAvg = sum / dynamicCount;
+        }
+
+        setCompanyInfo({
+          ...companyData,
+          average_rating: dynamicAvg,
+          total_jobs: dynamicCount
+        });
       }
 
       // Get company info for filtering
@@ -103,16 +130,21 @@ export default function TechnicalCompanyDashboard() {
       // Get all bidding requests
       const { data: allBiddingRequests } = await supabase
         .from('technical_service_requests')
-        .select('id, location_city, location_district, service_type_id, brand_id, send_to_authorized_service')
-        .eq('status', 'bidding');
+        .select('id, location_city, location_district, service_type_id, brand_id, send_to_authorized_service, status, updated_at')
+        .in('status', ['bidding', 'revision_requested', 'info_needed']);
 
-      // Get request IDs where this company already has a bid
+      // Get request IDs where this company already has a bid, with their creation dates and status
       const { data: existingBids } = await supabase
         .from('technical_service_bids')
-        .select('request_id')
+        .select('request_id, created_at, status')
         .eq('company_id', technicalCompanyId);
 
-      const biddedRequestIds = new Set(existingBids?.map(b => b.request_id) || []);
+      const bidsInfoByRequest = new Map<string, Array<{ created_at: string, status: string }>>();
+      existingBids?.forEach(bid => {
+        const infos = bidsInfoByRequest.get(bid.request_id) || [];
+        infos.push({ created_at: bid.created_at, status: bid.status });
+        bidsInfoByRequest.set(bid.request_id, infos);
+      });
 
       // Count companies per district+service_type for geographic filtering logic
       const districtCompanyCounts: Map<string, number> = new Map();
@@ -179,12 +211,51 @@ export default function TechnicalCompanyDashboard() {
           reason: []
         };
 
-        // Already bid on this request
-        if (biddedRequestIds.has(req.id)) {
-          decision.passed = false;
-          decision.reason.push('Already bid');
-          console.log('❌ DASHBOARD:', decision);
-          return false;
+        const myBids = bidsInfoByRequest.get(req.id);
+        const hasBid = !!myBids && myBids.length > 0;
+
+        // Check if previously bid
+        if (hasBid) {
+          if (req.status === 'revision_requested') {
+            // Validating if we have responded to the revision
+            const requestUpdateTime = new Date(req.updated_at).getTime();
+            const hasNewResponse = myBids.some(b => new Date(b.created_at).getTime() > requestUpdateTime);
+
+            if (hasNewResponse) {
+              decision.passed = false;
+              decision.reason.push('Already responded to revision');
+              return false;
+            }
+          } else if (req.status === 'info_needed') {
+            // Only show if I have an ACCEPTED bid (meaning I am the one requested for info)
+            const hasAcceptedBid = myBids.some(b => b.status === 'accepted');
+
+            if (!hasAcceptedBid) {
+              // I am not the selected company
+              decision.passed = false;
+              decision.reason.push('Not selected for info');
+              return false;
+            }
+
+            // If I am selected, checking if I have responded with a NEW bid (post info request)
+            const requestUpdateTime = new Date(req.updated_at).getTime();
+            // Look for a bid created AFTER update time (which isn't the accepted one ideally, but any new bid works)
+            const hasNewResponse = myBids.some(b =>
+              new Date(b.created_at).getTime() > requestUpdateTime
+            );
+
+            if (hasNewResponse) {
+              decision.passed = false;
+              decision.reason.push('Already responded to info request');
+              return false;
+            }
+            // Show it!
+          } else {
+            // Normal bidding status - if bid exists, hide it (unless rejected? if rejected maybe show again? No, usually not.)
+            decision.passed = false;
+            decision.reason.push('Already bid');
+            return false;
+          }
         }
 
         // 1. Service specialty matching (must match first)
@@ -258,12 +329,33 @@ export default function TechnicalCompanyDashboard() {
         .eq('company_id', technicalCompanyId)
         .not('completion_date', 'is', null);
 
+
+      // Get diagnostic jobs count
+      const { data: diagnosticJobsReqs } = await supabase
+        .from('technical_service_requests')
+        .select('id, selected_bid_id')
+        .eq('status', 'diagnostic_in_progress');
+
+      let diagnosticCount = 0;
+      if (diagnosticJobsReqs && diagnosticJobsReqs.length > 0) {
+        const bidIds = diagnosticJobsReqs.map(r => r.selected_bid_id);
+        const { data: myBids } = await supabase
+          .from('technical_service_bids')
+          .select('id')
+          .in('id', bidIds)
+          .eq('company_id', technicalCompanyId);
+
+        diagnosticCount = myBids?.length || 0;
+      }
+
       setStats({
         available_requests: availableCount,
-        my_bids: myBidsCount || 0,
+        my_bids: existingBids?.filter(b => b.status === 'pending').length || 0,
         active_jobs: activeJobsCount || 0,
         completed_jobs: completedJobsCount || 0,
+        diagnostic_jobs: diagnosticCount,
       });
+
     } catch (error) {
       console.error('Error loading dashboard:', error);
     } finally {
@@ -327,29 +419,49 @@ export default function TechnicalCompanyDashboard() {
             )}
 
             <View style={styles.statsGrid}>
-              <View style={[styles.statCard, { backgroundColor: '#dbeafe' }]}>
-                <FileText size={28} color="#3b82f6" />
+              <TouchableOpacity
+                style={[styles.statCard, { backgroundColor: '#dbeafe' }]}
+                onPress={() => router.push('/technical-company/available-requests')}
+              >
+                <View style={[styles.iconBox, { backgroundColor: '#3b82f6' }]}>
+                  <FileText size={24} color="white" />
+                </View>
                 <Text style={styles.statNumber}>{stats.available_requests}</Text>
                 <Text style={styles.statLabel}>Teklif Verilebilir</Text>
-              </View>
+              </TouchableOpacity>
 
-              <View style={[styles.statCard, { backgroundColor: '#fef3c7' }]}>
-                <Clock size={28} color="#f59e0b" />
+              <TouchableOpacity
+                style={[styles.statCard, { backgroundColor: '#fef3c7' }]}
+                onPress={() => router.push('/technical-company/bids')}
+              >
+                <View style={[styles.iconBox, { backgroundColor: '#f59e0b' }]}>
+                  <Clock size={24} color="white" />
+                </View>
                 <Text style={styles.statNumber}>{stats.my_bids}</Text>
-                <Text style={styles.statLabel}>Bekleyen Tekliflerim</Text>
-              </View>
+                <Text style={styles.statLabel}>Bekleyen</Text>
+              </TouchableOpacity>
 
-              <View style={[styles.statCard, { backgroundColor: '#e0f2fe' }]}>
-                <AlertCircle size={28} color="#0284c7" />
+              <TouchableOpacity
+                style={[styles.statCard, { backgroundColor: '#e0f2fe' }]}
+                onPress={() => router.push('/technical-company/active-jobs')}
+              >
+                <View style={[styles.iconBox, { backgroundColor: '#0ea5e9' }]}>
+                  <AlertCircle size={24} color="white" />
+                </View>
                 <Text style={styles.statNumber}>{stats.active_jobs}</Text>
                 <Text style={styles.statLabel}>Aktif İşler</Text>
-              </View>
+              </TouchableOpacity>
 
-              <View style={[styles.statCard, { backgroundColor: '#d1fae5' }]}>
-                <CheckCircle size={28} color="#10b981" />
+              <TouchableOpacity
+                style={[styles.statCard, { backgroundColor: '#d1fae5' }]}
+                onPress={() => router.push({ pathname: '/technical-company/active-jobs', params: { view: 'completed' } })}
+              >
+                <View style={[styles.iconBox, { backgroundColor: '#10b981' }]}>
+                  <CheckCircle size={24} color="white" />
+                </View>
                 <Text style={styles.statNumber}>{stats.completed_jobs}</Text>
                 <Text style={styles.statLabel}>Tamamlanan</Text>
-              </View>
+              </TouchableOpacity>
             </View>
 
             <View style={styles.section}>
@@ -381,6 +493,21 @@ export default function TechnicalCompanyDashboard() {
                   <Text style={styles.actionTitle}>Tekliflerim</Text>
                   <Text style={styles.actionDesc}>
                     Verdiğiniz teklifleri görüntüle ve yönet
+                  </Text>
+                </View>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.actionCard}
+                onPress={() => router.push('/technical-company/diagnostic-jobs')}
+              >
+                <View style={[styles.actionIcon, { backgroundColor: '#e0e7ff' }]}>
+                  <Stethoscope size={24} color="#6366f1" />
+                </View>
+                <View style={styles.actionInfo}>
+                  <Text style={styles.actionTitle}>Tanı İşleri</Text>
+                  <Text style={styles.actionDesc}>
+                    Onaylanan tanı servisi işlerini görüntüle ve rapor yaz
                   </Text>
                 </View>
               </TouchableOpacity>
@@ -463,6 +590,14 @@ const styles = StyleSheet.create({
   headerSub: {
     fontSize: 14,
     color: COLORS.textLight,
+  },
+  iconBox: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
   },
   content: {
     flex: 1,
