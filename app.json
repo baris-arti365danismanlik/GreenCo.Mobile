@@ -2,7 +2,7 @@
   "expo": {
     "name": "KADRO360",
     "slug": "kadro360-service",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "orientation": "portrait",
     "icon": "./assets/images/new-logo.png",
     "scheme": "kadro360",
@@ -12,11 +12,11 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.greenco.service",
-      "buildNumber": "6"
+      "buildNumber": "7"
     },
     "android": {
       "package": "com.greenco.service",
-      "versionCode": 6,
+      "versionCode": 7,
       "minSdkVersion": 24,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/icon.png",
