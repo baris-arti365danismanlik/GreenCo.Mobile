@@ -11,7 +11,7 @@ import {
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { COLORS } from '@/constants/theme';
-import { ArrowLeft, Building2, MapPin, FileText, Send, CheckCircle, Calendar, Users, DollarSign, MessageSquare, Stethoscope, AlertCircle, Clock, Edit, Save, X } from 'lucide-react-native';
+import { ArrowLeft, Building2, MapPin, FileText, Send, CheckCircle, Calendar, Users, DollarSign, MessageSquare, Stethoscope, AlertCircle, Clock, Edit, Save, X, RefreshCcw, XCircle } from 'lucide-react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TextInput } from 'react-native';
 
@@ -108,7 +108,7 @@ export default function RequestDetail() {
       if (data?.status !== 'pending_review') {
         const { data: bidsData } = await supabase
           .from('technical_service_bids')
-          .select('*, technical_service_companies(company_name, phone, email)')
+          .select('*, technical_service_companies(company_name, phone, email, rating)')
           .eq('request_id', id);
 
         if (bidsData) {
@@ -252,88 +252,19 @@ export default function RequestDetail() {
     try {
       setUpdating(true);
 
-      // 1. Reset previous selections for this request
+      const { data, error } = await supabase.rpc('auto_select_bids_for_customer', {
+        p_request_id: id,
+      });
+
+      if (error) throw error;
+
       await supabase
-        .from('technical_service_bids')
-        .update({
-          selected_for_customer: false,
-          shown_to_customer_at: null,
-          is_combined_info_request: false,
-          combined_from_bid_ids: null
-        })
-        .eq('request_id', id);
-
-      // 2. Fetch all active bids
-      const { data: bids } = await supabase
-        .from('technical_service_bids')
-        .select('*')
-        .eq('request_id', id)
-        .neq('status', 'rejected')
-        .neq('status', 'withdrawn');
-
-      if (bids && bids.length > 0) {
-        const updates = [];
-
-        // 3a. Select Lowest Price Quote
-        const quoteBids = bids
-          .filter(b => b.bid_type === 'quote' && b.bid_amount != null)
-          .sort((a, b) => (a.bid_amount || 0) - (b.bid_amount || 0) || new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-
-        if (quoteBids.length > 0) {
-          updates.push(
-            supabase
-              .from('technical_service_bids')
-              .update({ selected_for_customer: true, shown_to_customer_at: new Date().toISOString() })
-              .eq('id', quoteBids[0].id)
-          );
-        }
-
-        // 3b. Select Lowest Price Diagnostic
-        const diagnosticBids = bids
-          .filter(b => (b.bid_type === 'diagnostic' || b.bid_type === 'diagnostic_service') && b.bid_amount != null)
-          .sort((a, b) => (a.bid_amount || 0) - (b.bid_amount || 0) || new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-
-        if (diagnosticBids.length > 0) {
-          updates.push(
-            supabase
-              .from('technical_service_bids')
-              .update({ selected_for_customer: true, shown_to_customer_at: new Date().toISOString() })
-              .eq('id', diagnosticBids[0].id)
-          );
-        }
-
-        // 3c. Combine Info Requests
-        const infoRequestBids = bids.filter(b => b.bid_type === 'info_request');
-        if (infoRequestBids.length > 0) {
-          const ids = infoRequestBids.map(b => b.id);
-          const primaryBidId = ids[0];
-
-          updates.push(
-            supabase
-              .from('technical_service_bids')
-              .update({
-                selected_for_customer: true,
-                is_combined_info_request: true,
-                combined_from_bid_ids: ids,
-                shown_to_customer_at: new Date().toISOString()
-              })
-              .eq('id', primaryBidId)
-          );
-        }
-
-        await Promise.all(updates);
-      }
-
-      // 4. Update request status
-      const { error: updateError } = await supabase
         .from('technical_service_requests')
         .update({
           status: 'awaiting_customer_decision',
           updated_at: new Date().toISOString(),
         })
         .eq('id', id);
-
-      if (updateError) throw updateError;
 
       window.alert('Başarılı: Müşteriye en uygun seçenekler hazırlandı');
       loadRequest();
@@ -344,6 +275,71 @@ export default function RequestDetail() {
       setUpdating(false);
     }
   };
+
+  const handleSolicitBidsAgain = async () => {
+    const confirmed = window.confirm(
+      'Talebi yeniden teklif toplamaya açmak istiyor musunuz? Bu işlem talebi Admine geri gönderecek ve mevcut teklifler revize edilebilecek.'
+    );
+    if (!confirmed) return;
+
+    try {
+      setUpdating(true);
+      // Update Request to 'revision_requested' so Admin can take action (Solicit Diagnostic or Revize)
+      // We use 'revision_requested' because in admin panel, this status allows "Tanı Raporu ile Teklif Al" button.
+      const { error } = await supabase
+        .from('technical_service_requests')
+        .update({
+          status: 'revision_requested',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', id);
+
+      if (error) throw error;
+
+      window.alert('Başarılı: Talep yeniden teklif toplama/revizyon için Admine geri gönderildi.');
+      router.back();
+    } catch (error) {
+      console.error('Error rewriting bids:', error);
+      window.alert('Hata: İşlem başarısız');
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const handleRejectBids = async () => {
+    const confirmed = window.confirm(
+      'Tüm teklifleri reddetmek ve talebi iptal etmek istiyor musunuz?'
+    );
+    if (!confirmed) return;
+
+    try {
+      setUpdating(true);
+      // Status to 'rejected' or 'cancelled'. User said "Redderse reddedildi olur".
+      // Assuming 'cancelled' or 'rejected'. Let's check getStatusLabel.
+      // 'cancelled': 'İptal Edildi'. Let's use 'cancelled' if rejected is not a standard end state, but 'rejected' might be better if available.
+      // Actually common flow is 'cancelled' for request.
+      // But let's look at available statuses. 'cancelled' exists.
+
+      const { error } = await supabase
+        .from('technical_service_requests')
+        .update({
+          status: 'cancelled',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', id);
+
+      if (error) throw error;
+
+      window.alert('Başarılı: Talep ve teklifler reddedildi/iptal edildi.');
+      router.back();
+    } catch (error) {
+      console.error('Error rejecting bids:', error);
+      window.alert('Hata: İşlem başarısız');
+    } finally {
+      setUpdating(false);
+    }
+  };
+
 
   const handleApprove = async () => {
     console.log('handleApprove called');
@@ -409,17 +405,17 @@ export default function RequestDetail() {
         <View style={styles.card}>
           <Text style={styles.title}>{request.title}</Text>
 
-          <View style={styles.infoRow}>
-            <Building2 size={20} color={COLORS.textLight} />
-            <View style={styles.infoContent}>
-              <Text style={styles.infoLabel}>Firma</Text>
-              <Text style={styles.infoValue}>
-                {request.companies?.name
-                  ? (request.companies.name.substring(0, 2) + '*'.repeat(Math.max(0, request.companies.name.length - 2)))
-                  : '-'}
-              </Text>
+          {isUserAdmin && (
+            <View style={styles.infoRow}>
+              <Building2 size={20} color={COLORS.textLight} />
+              <View style={styles.infoContent}>
+                <Text style={styles.infoLabel}>Firma</Text>
+                <Text style={styles.infoValue}>
+                  {request.companies?.name || '-'}
+                </Text>
+              </View>
             </View>
-          </View>
+          )}
 
           {request.projects_greenco && (
             <View style={styles.infoRow}>
@@ -571,7 +567,9 @@ export default function RequestDetail() {
                   <View style={styles.card}>
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }}>
                       <Text style={{ fontSize: 16, fontWeight: '700', color: COLORS.secondary }}>
-                        {acceptedBid.technical_service_companies?.company_name}
+                        {isUserProjectManager
+                          ? 'Teknik Servis Firması'
+                          : acceptedBid.technical_service_companies?.company_name}
                       </Text>
                       <View style={{ backgroundColor: '#dcfce7', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}>
                         <Text style={{ color: '#166534', fontSize: 12, fontWeight: '600' }}>Seçilen Firma</Text>
@@ -765,6 +763,24 @@ export default function RequestDetail() {
             >
               <FileText size={20} color="white" />
               <Text style={styles.primaryBtnText}>Teklifleri İncele ve Onayla</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.actionBtn, styles.secondaryBtn, { borderColor: COLORS.primary }]}
+              onPress={handleSolicitBidsAgain}
+              disabled={updating}
+            >
+              <RefreshCcw size={20} color={COLORS.primary} />
+              <Text style={styles.secondaryBtnText}>Yeniden Talep Topla</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.actionBtn, { backgroundColor: '#fee2e2', borderWidth: 1, borderColor: '#ef4444' }]}
+              onPress={handleRejectBids}
+              disabled={updating}
+            >
+              <XCircle size={20} color="#ef4444" />
+              <Text style={[styles.secondaryBtnText, { color: '#ef4444' }]}>Teklifleri Reddet</Text>
             </TouchableOpacity>
           </View>
         )}

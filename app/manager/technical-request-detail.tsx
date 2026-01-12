@@ -24,6 +24,7 @@ import {
   Clock,
   CheckCircle,
   XCircle,
+  RefreshCw,
   Edit,
   Save,
   X,
@@ -225,18 +226,23 @@ export default function TechnicalRequestDetail() {
 
       if (rejectError) console.warn('Error rejecting other bids:', rejectError);
 
-      // 4. Update Request Status to 'approved'
+      // Check if any selected bid is diagnostic
+      const isDiagnostic = selectedBids.some(b => b.bid_type === 'diagnostic');
+
+      // 4. Update Request Status
+      const newStatus = isDiagnostic ? 'diagnostic_in_progress' : 'approved';
+
       const { error } = await supabase
         .from('technical_service_requests')
         .update({
-          status: 'approved',
+          status: newStatus,
           updated_at: new Date().toISOString(),
         })
         .eq('id', id);
 
       if (error) throw error;
 
-      Alert.alert('Başarılı', 'Teklif onaylandı.');
+      Alert.alert('Başarılı', isDiagnostic ? 'Tanı servisi onaylandı.' : 'Teklif onaylandı.');
       // Refresh logic or Back
       router.back();
     } catch (error) {
@@ -294,6 +300,65 @@ export default function TechnicalRequestDetail() {
     }
   };
 
+  const handleRevise = async () => {
+    let confirmed = false;
+
+    if (Platform.OS === 'web') {
+      confirmed = window.confirm('Talebi revizeye göndermek üzeresiniz. Tanı raporu bilgileri açıklama kısmına eklenecektir. Emin misiniz?');
+    } else {
+      confirmed = await new Promise((resolve) => {
+        Alert.alert(
+          'Revize Et',
+          'Talebi revizeye göndermek üzeresiniz. Tanı raporu bilgileri açıklama kısmına eklenecektir. Emin misiniz?',
+          [
+            { text: 'İptal', onPress: () => resolve(false), style: 'cancel' },
+            { text: 'Revize Et', onPress: () => resolve(true) },
+          ]
+        );
+      });
+    }
+
+    if (!confirmed) return;
+
+    try {
+      setUpdating(true);
+
+      // 1. Prepare new description
+      let newDescription = request.description;
+      if (request.diagnostic_report) {
+        newDescription += `\n\n--- TANI RAPORU VE İSTENEN PARÇALAR ---\n${request.diagnostic_report}`;
+      }
+
+      // 2. Reject existing bids (so they can bid again or stay as history)
+      const { error: rejectError } = await supabase
+        .from('technical_service_bids')
+        .update({ status: 'rejected' }) // Or keep them pending? Usually rejected so they know to bid again.
+        .eq('request_id', id);
+
+      if (rejectError) console.warn('Error updating bids:', rejectError);
+
+      // 3. Update Request
+      const { error } = await supabase
+        .from('technical_service_requests')
+        .update({
+          status: 'bidding', // Open for bids again
+          description: newDescription,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', id);
+
+      if (error) throw error;
+
+      Alert.alert('Başarılı', 'Talep revizeye gönderildi.');
+      router.back();
+    } catch (error) {
+      console.error('Error revising request:', error);
+      Alert.alert('Hata', 'İşlem başarısız oldu');
+    } finally {
+      setUpdating(false);
+    }
+  };
+
   const handleSaveDescription = async () => {
     try {
       setUpdating(true);
@@ -335,6 +400,7 @@ export default function TechnicalRequestDetail() {
   const diagnosticBids = bids.filter(b => b.bid_type === 'diagnostic');
   const isAwaitingCustomerDecision = request.status === 'awaiting_customer_decision';
   const isBidding = request.status === 'bidding';
+  const hasDiagnosticReport = !!request.diagnostic_report;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -524,7 +590,7 @@ export default function TechnicalRequestDetail() {
                   <View key={bid.id} style={styles.bidCard}>
                     <View style={styles.bidHeader}>
                       <Text style={styles.companyName}>
-                        {bid.technical_service_companies?.company_name || 'Greenco Yetkili Servis'}
+                        Teknik Servis Firması
                       </Text>
                       {!isAwaitingCustomerDecision && (
                         <View style={{ backgroundColor: '#dcfce7', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12 }}>
@@ -571,7 +637,7 @@ export default function TechnicalRequestDetail() {
                   <View key={bid.id} style={[styles.bidCard, { borderColor: '#6366f1' }]}>
                     <View style={styles.bidHeader}>
                       <Text style={styles.companyName}>
-                        {bid.technical_service_companies?.company_name || 'Greenco Yetkili Servis'}
+                        Teknik Servis Firması
                       </Text>
                       {!isAwaitingCustomerDecision && (
                         <View style={{ backgroundColor: '#dcfce7', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12 }}>
@@ -615,7 +681,9 @@ export default function TechnicalRequestDetail() {
                   ) : (
                     <>
                       <CheckCircle size={20} color="white" />
-                      <Text style={styles.primaryBtnText}>Teklifleri Onayla</Text>
+                      <Text style={styles.primaryBtnText}>
+                        {hasDiagnosticReport ? 'Tanı Raporu ile Teklif Al' : 'Teklifleri Onayla'}
+                      </Text>
                     </>
                   )}
                 </TouchableOpacity>

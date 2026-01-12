@@ -165,14 +165,14 @@ export default function AvailableRequests() {
       // Get request IDs where this company already has a bid, with their creation dates and status
       const { data: existingBids } = await supabase
         .from('technical_service_bids')
-        .select('request_id, created_at, status')
+        .select('request_id, created_at, status, bid_type')
         .eq('company_id', profile.technical_company_id);
 
       // Map request_id to array of bid info
-      const bidsInfoByRequest = new Map<string, Array<{ created_at: string, status: string }>>();
+      const bidsInfoByRequest = new Map<string, Array<{ created_at: string, status: string, bid_type: string }>>();
       existingBids?.forEach(bid => {
         const infos = bidsInfoByRequest.get(bid.request_id) || [];
-        infos.push({ created_at: bid.created_at, status: bid.status });
+        infos.push({ created_at: bid.created_at, status: bid.status, bid_type: bid.bid_type });
         bidsInfoByRequest.set(bid.request_id, infos);
       });
 
@@ -281,10 +281,28 @@ export default function AvailableRequests() {
             }
             // Show it!
           } else {
-            // Normal bidding status - if bid exists, hide it (unless rejected? if rejected maybe show again? No, usually not.)
-            decision.passed = false;
-            decision.reason.push('Already bid');
-            return false;
+            // Normal bidding status
+            // If bid exists, check its status. If rejected or revision_requested, allow seeing it again to re-bid.
+            const latestBid = myBids.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
+
+            // If latest bid is active (pending/accepted), hide it.
+            // If rejected or revision_requested, show it so they can bid again.
+            // If latest bid is active (pending/accepted), check if it's a diagnostic service.
+            // If I did the diagnostic and it was accepted/completed, I should be able to bid for the repair now (since status is bidding/revision).
+            if (['pending', 'accepted'].includes(latestBid.status)) {
+              // Special case: Diagnostic provider needs to re-bid for repair
+              const isDiagnostic = latestBid.bid_type === 'diagnostic' || latestBid.bid_type === 'diagnostic_service';
+              const isDiagnosticCompleted = latestBid.status === 'accepted'; // Diagnostic bid accepted means they did the job (or are doing it)
+
+              if (isDiagnostic && isDiagnosticCompleted) {
+                // Allow pass! They need to see it to give a repair quote.
+              } else {
+                decision.passed = false;
+                decision.reason.push(`Already bid (${latestBid.status})`);
+                return false;
+              }
+            }
+            // implied passed = true for rejected/revision_requested OR completed diagnostic provider
           }
 
         }

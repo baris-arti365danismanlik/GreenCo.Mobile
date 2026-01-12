@@ -132,8 +132,25 @@ export default function CompaniesManagement() {
   };
 
   const handleSave = async () => {
-    if (!formData.name) {
-      Alert.alert('Hata', 'Firma adı zorunludur');
+    const missingFields = [];
+    if (!formData.name.trim()) missingFields.push('Firma Adı');
+    if (!formData.tax_number.trim()) {
+      missingFields.push('Vergi Numarası');
+    } else if (formData.tax_number.length < 9) {
+      if (Platform.OS === 'web') {
+        window.alert('Vergi numarası en az 9 karakter olmalıdır.');
+      } else {
+        Alert.alert('Hata', 'Vergi numarası en az 9 karakter olmalıdır.');
+      }
+      return;
+    }
+
+    if (missingFields.length > 0) {
+      if (Platform.OS === 'web') {
+        window.alert(`Lütfen aşağıdaki alanları doldurun:\n\n${missingFields.join('\n')}`);
+      } else {
+        Alert.alert('Dikkat', `Lütfen aşağıdaki alanları doldurun:\n\n${missingFields.join('\n')}`);
+      }
       return;
     }
 
@@ -385,14 +402,15 @@ export default function CompaniesManagement() {
               <InputGroup
                 placeholder="Vergi Numarası *"
                 value={formData.tax_number}
-                onChangeText={(text) => setFormData({ ...formData, tax_number: text })}
+                onChangeText={(text) => setFormData({ ...formData, tax_number: text.replace(/[^0-9]/g, '').slice(0, 11) })}
                 keyboardType="numeric"
+                maxLength={11}
               />
 
               <InputGroup
                 placeholder="Komisyon Oranı (%)"
                 value={formData.commission_rate}
-                onChangeText={(text) => setFormData({ ...formData, commission_rate: text })}
+                onChangeText={(text) => setFormData({ ...formData, commission_rate: text.replace(/[^0-9]/g, '') })}
                 keyboardType="numeric"
               />
 
@@ -416,10 +434,11 @@ export default function CompaniesManagement() {
               />
 
               <InputGroup
-                placeholder="Telefon"
+                placeholder="Telefon (5XX...)"
                 value={formData.contact_phone}
-                onChangeText={(text) => setFormData({ ...formData, contact_phone: text })}
+                onChangeText={(text) => setFormData({ ...formData, contact_phone: text.replace(/[^0-9]/g, '').slice(0, 10) })}
                 keyboardType="phone-pad"
+                maxLength={10}
               />
             </ScrollView>
 

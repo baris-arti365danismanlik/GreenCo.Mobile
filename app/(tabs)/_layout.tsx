@@ -1,7 +1,6 @@
-import { Redirect, Tabs } from 'expo-router';
+import { Redirect, Stack } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
-import { Home, QrCode, ClipboardList, Settings, Users, FileText } from 'lucide-react-native';
 
 export default function TabsLayout() {
   const { session, profile, loading } = useAuth();
@@ -22,82 +21,15 @@ export default function TabsLayout() {
     return <Redirect href="/technical-company" />;
   }
 
-  const isPersonnel = profile?.role === 'personnel';
-  const isProjectManager = profile?.role === 'project_manager';
-  const isOperations = profile?.role === 'operations';
-  const isAdmin = profile?.role === 'admin';
-
-  /* Reverted redirect */
-
   return (
-    <Tabs
-      screenOptions={{
-        headerShown: false,
-        tabBarActiveTintColor: '#059669',
-        tabBarInactiveTintColor: '#6b7280',
-        tabBarLabelPosition: 'below-icon',
-        tabBarStyle: {
-          borderTopWidth: 1,
-          borderTopColor: '#e5e7eb',
-          height: 65,
-          paddingBottom: 8,
-          display: isAdmin || isOperations ? 'none' : 'flex',
-        },
-        tabBarLabelStyle: {
-          fontSize: 11,
-          fontWeight: '500',
-        },
-      }}
-    >
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: isPersonnel ? 'QR Tara' : 'Ana Sayfa',
-          tabBarIcon: ({ size, color }) => isPersonnel ? <QrCode size={size} color={color} /> : <Home size={size} color={color} />,
-        }}
-      />
-
-      <Tabs.Screen
-        name="personnel"
-        options={{
-          title: 'Personel',
-          tabBarIcon: ({ size, color }) => <Users size={size} color={color} />,
-          href: isProjectManager ? '/(tabs)/personnel' : null,
-        }}
-      />
-
-      <Tabs.Screen
-        name="approvals"
-        options={{
-          title: 'Onaylar',
-          tabBarIcon: ({ size, color }) => <FileText size={size} color={color} />,
-          href: isProjectManager ? '/(tabs)/approvals' : null,
-        }}
-      />
-
-      <Tabs.Screen
-        name="requests"
-        options={{
-          title: 'Talepler',
-          tabBarIcon: ({ size, color }) => <ClipboardList size={size} color={color} />,
-          href: (isOperations || isAdmin) ? '/(tabs)/requests' : null,
-        }}
-      />
-
-      <Tabs.Screen
-        name="qr-scanner"
-        options={{
-          href: null,
-        }}
-      />
-
-      <Tabs.Screen
-        name="profile"
-        options={{
-          href: null,
-        }}
-      />
-    </Tabs>
+    <Stack screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="index" />
+      <Stack.Screen name="personnel" />
+      <Stack.Screen name="approvals" />
+      <Stack.Screen name="requests" />
+      <Stack.Screen name="qr-scanner" />
+      <Stack.Screen name="profile" />
+    </Stack>
   );
 }
 

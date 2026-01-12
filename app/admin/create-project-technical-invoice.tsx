@@ -225,15 +225,76 @@ export default function CreateProjectTechnicalInvoiceScreen() {
 
     const createInvoice = async (status: 'draft' | 'approved') => {
         if (saving) return; // Prevent double submission
+
         if (selectedJobIds.size === 0) {
-            // ...
+            if (Platform.OS === 'web') {
+                window.alert('Lütfen faturaya dahil edilecek işleri seçin');
+            } else {
+                Alert.alert('Uyarı', 'Lütfen faturaya dahil edilecek işleri seçin');
+            }
+            return;
         }
 
         setSaving(true);
         try {
-            // ... (rest of logic)
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) throw new Error('Kullanıcı bulunamadı');
+
+            // 1. Generate Invoice Number (Example: INV-20231025-ABCD)
+            const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+            const randomPart = Math.random().toString(36).substring(2, 6).toUpperCase();
+            const invoiceNumber = `INV-${dateStr}-${randomPart}`;
+
+            const selectedIdsArray = Array.from(selectedJobIds);
+
+            // 2. Create Invoice Record
+            const { data: invoiceData, error: invoiceError } = await supabase
+                .from('project_technical_invoices')
+                .insert({
+                    invoice_number: invoiceNumber,
+                    project_id: selectedProjectId,
+                    period_start: startDate,
+                    period_end: endDate,
+                    total_amount: totalAmount,
+                    total_jobs: totalJobs,
+                    status: status,
+                    created_by: user.id,
+                    request_ids: selectedIdsArray // Store array for reference
+                })
+                .select()
+                .single();
+
+            if (invoiceError) throw invoiceError;
+
+            // 3. Update Requests to link with this invoice
+            const { error: updateError } = await supabase
+                .from('technical_service_requests')
+                .update({ customer_invoice_id: invoiceData.id })
+                .in('id', selectedIdsArray);
+
+            if (updateError) {
+                // If update fails, maybe we should rollback the invoice creation or alert admin?
+                // For simplicity, we'll throw and alert. Ideally, use database transaction or edge function.
+                console.error('Error linking requests to invoice:', updateError);
+                throw updateError;
+            }
+
+            // 4. Success
+            if (Platform.OS === 'web') {
+                window.alert('Hakediş başarıyla oluşturuldu');
+            } else {
+                Alert.alert('Başarılı', 'Hakediş başarıyla oluşturuldu');
+            }
+
+            router.back();
+
         } catch (error: any) {
-            // ...
+            console.error('Hakediş oluşturma hatası:', error);
+            if (Platform.OS === 'web') {
+                window.alert('Hakediş oluşturulurken bir hata oluştu: ' + (error.message || error));
+            } else {
+                Alert.alert('Hata', 'Hakediş oluşturulurken bir hata oluştu');
+            }
         } finally {
             setSaving(false);
         }

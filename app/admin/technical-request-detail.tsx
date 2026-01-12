@@ -200,10 +200,17 @@ export default function AdminTechnicalRequestDetail() {
 
     try {
       setUpdating(true);
+
+      let newDescription = request.description;
+      if (request.diagnostic_report) {
+        newDescription += `\n\n--- TANI RAPORU VE İSTENEN PARÇALAR ---\n${request.diagnostic_report}`;
+      }
+
       const { data, error } = await supabase
         .from('technical_service_requests')
         .update({
           status: 'revision_requested',
+          description: newDescription,
           updated_at: new Date().toISOString(),
         })
         .eq('id', id)
@@ -362,6 +369,56 @@ export default function AdminTechnicalRequestDetail() {
     }
   };
 
+  const handleSolicitBidsWithDiagnostic = async () => {
+    const confirmed = window.confirm(
+      'Tanı raporu ile teklif toplama başlatılacak. Mevcut teklifler revizyona çekilecek ve yeni firmalar da teklif verebilecek. Devam etmek istiyor musunuz?'
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setUpdating(true);
+
+      // 1. Prepare description
+      let newDescription = request.description;
+      // Only append if not already appended (simple check)
+      if (request.diagnostic_report && !newDescription.includes('--- TANI RAPORU')) {
+        newDescription += `\n\n--- TANI RAPORU VE İSTENEN PARÇALAR ---\n${request.diagnostic_report}`;
+      }
+
+      // 2. Update existing bids to 'revision_requested' so they can bid again
+      const { error: bidsError } = await supabase
+        .from('technical_service_bids')
+        .update({ status: 'revision_requested' })
+        .eq('request_id', id);
+
+      if (bidsError) console.warn('Error updating bids:', bidsError);
+
+      // 3. Update Request to 'bidding' (so it appears as new for everyone)
+      const { error } = await supabase
+        .from('technical_service_requests')
+        .update({
+          status: 'bidding',
+          description: newDescription,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', id);
+
+      if (error) throw error;
+
+      window.alert('Başarılı: Tanı raporu ile teklif süreci başlatıldı.');
+      await loadRequest();
+    } catch (error) {
+      console.error('Error initiating diagnostic bidding:', error);
+      window.alert('Hata: İşlem başarısız');
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const hasDiagnosticReport = !!(request?.diagnostic_report);
+
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -392,9 +449,7 @@ export default function AdminTechnicalRequestDetail() {
             <View style={styles.infoContent}>
               <Text style={styles.infoLabel}>Firma</Text>
               <Text style={styles.infoValue}>
-                {request.companies?.name
-                  ? (request.companies.name.substring(0, 2) + '*'.repeat(Math.max(0, request.companies.name.length - 2)))
-                  : '-'}
+                {request.companies?.name || '-'}
               </Text>
             </View>
           </View>
@@ -850,6 +905,17 @@ export default function AdminTechnicalRequestDetail() {
                 </>
               )}
             </TouchableOpacity>
+
+            {hasDiagnosticReport && (
+              <TouchableOpacity
+                style={[styles.actionBtn, styles.secondaryBtn, { borderColor: '#6366f1' }]}
+                onPress={handleSolicitBidsWithDiagnostic}
+                disabled={updating}
+              >
+                <Stethoscope size={20} color="#6366f1" />
+                <Text style={[styles.secondaryBtnText, { color: '#6366f1' }]}>Tanı Raporu ile Teklif Al</Text>
+              </TouchableOpacity>
+            )}
 
             <View style={{ flexDirection: 'row', gap: 12 }}>
               <TouchableOpacity

@@ -283,14 +283,14 @@ export default function TechnicalRequests() {
 
                   <Text style={styles.requestTitle}>{request.title}</Text>
 
-                  <View style={styles.requestMeta}>
-                    <Text style={styles.metaLabel}>Firma:</Text>
-                    <Text style={styles.metaValue}>
-                      {request.companies?.name
-                        ? (request.companies.name.substring(0, 2) + '*'.repeat(Math.max(0, request.companies.name.length - 2)))
-                        : '-'}
-                    </Text>
-                  </View>
+                  {isAdmin && (
+                    <View style={styles.requestMeta}>
+                      <Text style={styles.metaLabel}>Firma:</Text>
+                      <Text style={styles.metaValue}>
+                        {request.companies?.name || '-'}
+                      </Text>
+                    </View>
+                  )}
 
                   <View style={styles.requestMeta}>
                     <Text style={styles.metaLabel}>Hizmet:</Text>

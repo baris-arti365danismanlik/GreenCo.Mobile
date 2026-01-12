@@ -53,6 +53,7 @@ export default function CreateTechnicalServiceInvoiceScreen() {
   const [endDate, setEndDate] = useState<string>('');
   const [jobs, setJobs] = useState<CompletedJob[]>([]);
   const [selectedJobIds, setSelectedJobIds] = useState<Set<string>>(new Set());
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     loadCompanies();
@@ -252,34 +253,50 @@ export default function CreateTechnicalServiceInvoiceScreen() {
       <ScrollView style={styles.content}>
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Firma Seçimi</Text>
+
+          <View style={styles.searchContainer}>
+            <View style={styles.searchWrapper}>
+              <Text style={{ marginRight: 8 }}>🔍</Text>
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Firma Ara..."
+                placeholderTextColor={COLORS.textLight}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+              />
+            </View>
+          </View>
+
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.companyList}>
-            {companies.map((company) => (
-              <TouchableOpacity
-                key={company.id}
-                style={[
-                  styles.companyCard,
-                  selectedCompanyId === company.id && styles.companyCardSelected,
-                ]}
-                onPress={() => {
-                  setSelectedCompanyId(company.id);
-                  setJobs([]);
-                  setSelectedJobIds(new Set());
-                }}
-              >
-                <Building2
-                  size={20}
-                  color={selectedCompanyId === company.id ? COLORS.primary : COLORS.textLight}
-                />
-                <Text
+            {companies
+              .filter(c => c.company_name.toLowerCase().includes(searchQuery.toLowerCase()))
+              .map((company) => (
+                <TouchableOpacity
+                  key={company.id}
                   style={[
-                    styles.companyCardText,
-                    selectedCompanyId === company.id && styles.companyCardTextSelected,
+                    styles.companyCard,
+                    selectedCompanyId === company.id && styles.companyCardSelected,
                   ]}
+                  onPress={() => {
+                    setSelectedCompanyId(company.id);
+                    setJobs([]);
+                    setSelectedJobIds(new Set());
+                  }}
                 >
-                  {company.company_name}
-                </Text>
-              </TouchableOpacity>
-            ))}
+                  <Building2
+                    size={20}
+                    color={selectedCompanyId === company.id ? COLORS.primary : COLORS.textLight}
+                  />
+                  <Text
+                    style={[
+                      styles.companyCardText,
+                      selectedCompanyId === company.id && styles.companyCardTextSelected,
+                    ]}
+                  >
+                    {company.company_name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
           </ScrollView>
         </View>
 
@@ -694,5 +711,24 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: COLORS.textLight,
     textAlign: 'center',
+  },
+  searchContainer: {
+    marginBottom: 12,
+  },
+  searchWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: '#FFF',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: COLORS.text,
+    padding: 0,
   },
 });

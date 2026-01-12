@@ -20,6 +20,7 @@ import {
   Building2,
   FileText,
   Send,
+  XCircle,
 } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -52,6 +53,8 @@ export default function DiagnosticJobs() {
   const [diagnosticReport, setDiagnosticReport] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
+  const [partsList, setPartsList] = useState<string[]>([]);
+  const [newPart, setNewPart] = useState('');
 
   useEffect(() => {
     loadJobs();
@@ -113,6 +116,17 @@ export default function DiagnosticJobs() {
     setShowReportModal(true);
   };
 
+  const handleAddPart = () => {
+    if (newPart.trim()) {
+      setPartsList([...partsList, newPart.trim()]);
+      setNewPart('');
+    }
+  };
+
+  const handleRemovePart = (index: number) => {
+    setPartsList(partsList.filter((_, i) => i !== index));
+  };
+
   const submitReport = async () => {
     if (!diagnosticReport.trim()) {
       window.alert('Lütfen tanı raporunu girin');
@@ -130,10 +144,18 @@ export default function DiagnosticJobs() {
     try {
       setSubmitting(true);
 
+      let finalReport = diagnosticReport;
+      if (partsList.length > 0) {
+        finalReport += '\n\n--- Değiştirilecek Parçalar ---\n';
+        partsList.forEach(part => {
+          finalReport += `• ${part}\n`;
+        });
+      }
+
       const { error } = await supabase
         .from('technical_service_requests')
         .update({
-          diagnostic_report: diagnosticReport,
+          diagnostic_report: finalReport,
           status: 'bidding',
           updated_at: new Date().toISOString(),
         })
@@ -145,6 +167,8 @@ export default function DiagnosticJobs() {
       setShowReportModal(false);
       setSelectedJob(null);
       setDiagnosticReport('');
+      setPartsList([]);
+      setNewPart('');
       loadJobs();
     } catch (error) {
       console.error('Error submitting report:', error);
@@ -244,49 +268,86 @@ export default function DiagnosticJobs() {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Tanı Raporu</Text>
-            <Text style={styles.modalSubtitle}>{selectedJob?.title}</Text>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <Text style={styles.modalTitle}>Tanı Raporu</Text>
+              <Text style={styles.modalSubtitle}>{selectedJob?.title}</Text>
 
-            <View style={styles.originalDescBox}>
-              <Text style={styles.originalDescLabel}>Talep Açıklaması:</Text>
-              <Text style={styles.originalDescText}>{selectedJob?.description}</Text>
-            </View>
+              <View style={styles.originalDescBox}>
+                <Text style={styles.originalDescLabel}>Talep Açıklaması:</Text>
+                <Text style={styles.originalDescText}>{selectedJob?.description}</Text>
+              </View>
 
-            <Text style={styles.inputLabel}>Tanı Raporu *</Text>
-            <TextInput
-              style={styles.textArea}
-              placeholder="Tespit ettiğiniz sorunu detaylı olarak açıklayın..."
-              value={diagnosticReport}
-              onChangeText={setDiagnosticReport}
-              multiline
-              numberOfLines={8}
-              textAlignVertical="top"
-            />
+              <Text style={styles.inputLabel}>Tanı Raporu *</Text>
+              <TextInput
+                style={styles.textArea}
+                placeholder="Tespit ettiğiniz sorunu detaylı olarak açıklayın..."
+                value={diagnosticReport}
+                onChangeText={setDiagnosticReport}
+                multiline
+                numberOfLines={8}
+                textAlignVertical="top"
+              />
 
-            <View style={styles.modalActions}>
-              <TouchableOpacity
-                style={[styles.modalBtn, styles.cancelBtn]}
-                onPress={() => setShowReportModal(false)}
-                disabled={submitting}
-              >
-                <Text style={styles.cancelBtnText}>İptal</Text>
-              </TouchableOpacity>
+              <View style={styles.partsSection}>
+                <Text style={styles.inputLabel}>Değiştirilecek Parçalar</Text>
 
-              <TouchableOpacity
-                style={[styles.modalBtn, styles.submitBtn]}
-                onPress={submitReport}
-                disabled={submitting}
-              >
-                {submitting ? (
-                  <ActivityIndicator color="white" />
-                ) : (
-                  <>
-                    <Send size={18} color="white" />
-                    <Text style={styles.submitBtnText}>Gönder</Text>
-                  </>
+                <View style={styles.addPartContainer}>
+                  <TextInput
+                    style={styles.partInput}
+                    placeholder="Parça adı girin..."
+                    value={newPart}
+                    onChangeText={setNewPart}
+                  />
+                  <TouchableOpacity
+                    style={styles.addPartBtn}
+                    onPress={handleAddPart}
+                  >
+                    <Text style={styles.addPartBtnText}>Ekle</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {partsList.length > 0 && (
+                  <View style={styles.partsList}>
+                    {partsList.map((part, index) => (
+                      <View key={index} style={styles.partItem}>
+                        <Text style={styles.partItemText}>• {part}</Text>
+                        <TouchableOpacity
+                          onPress={() => handleRemovePart(index)}
+                          style={styles.removePartBtn}
+                        >
+                          <XCircle size={18} color="#ef4444" />
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+                  </View>
                 )}
-              </TouchableOpacity>
-            </View>
+              </View>
+
+              <View style={styles.modalActions}>
+                <TouchableOpacity
+                  style={[styles.modalBtn, styles.cancelBtn]}
+                  onPress={() => setShowReportModal(false)}
+                  disabled={submitting}
+                >
+                  <Text style={styles.cancelBtnText}>İptal</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.modalBtn, styles.submitBtn]}
+                  onPress={submitReport}
+                  disabled={submitting}
+                >
+                  {submitting ? (
+                    <ActivityIndicator color="white" />
+                  ) : (
+                    <>
+                      <Send size={18} color="white" />
+                      <Text style={styles.submitBtnText}>Gönder</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -515,5 +576,60 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     color: 'white',
+  },
+  partsSection: {
+    marginTop: 8,
+    marginBottom: 16,
+  },
+  addPartContainer: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+  },
+  partInput: {
+    flex: 1,
+    backgroundColor: 'white',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 14,
+    color: COLORS.text,
+  },
+  addPartBtn: {
+    backgroundColor: COLORS.secondary,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  addPartBtnText: {
+    color: 'white',
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  partsList: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    overflow: 'hidden',
+  },
+  partItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+    backgroundColor: 'white',
+  },
+  partItemText: {
+    flex: 1,
+    fontSize: 14,
+    color: COLORS.text,
+  },
+  removePartBtn: {
+    padding: 4,
   },
 });

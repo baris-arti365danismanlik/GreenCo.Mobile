@@ -143,6 +143,13 @@ export default function UnitWorkOrdersScreen() {
                   </Text>
                 </View>
               )}
+
+              {order.notes && order.status === 'cancelled' && (
+                <View style={styles.rejectionBox}>
+                  <Text style={styles.rejectionLabel}>İptal Nedeni:</Text>
+                  <Text style={styles.rejectionText}>{order.notes}</Text>
+                </View>
+              )}
             </View>
           );
         })}

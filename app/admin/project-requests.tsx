@@ -265,7 +265,7 @@ export default function AdminProjectRequestsScreen() {
       const { error: updateError } = await supabase
         .from('personnel_requests')
         .update({
-          status: 'awaiting_assignment',
+          status: 'completed',
           approved_by: profile?.id,
           approved_at: new Date().toISOString(),
           project_id: projectId,
@@ -298,6 +298,29 @@ export default function AdminProjectRequestsScreen() {
       }
     } finally {
       setProcessingApproval(false);
+    }
+  };
+
+  const handleComplete = async (request: PersonnelRequest) => {
+    const confirmed = Platform.OS === 'web'
+      ? window.confirm('Bu talebi tamamlamak istediğinize emin misiniz?')
+      : true;
+
+    if (!confirmed) return;
+
+    try {
+      const { error } = await supabase
+        .from('personnel_requests')
+        .update({ status: 'completed' })
+        .eq('id', request.id);
+
+      if (error) throw error;
+      loadRequests();
+    } catch (error) {
+      console.error('Tamamlama hatası:', error);
+      if (Platform.OS === 'web') {
+        window.alert('Hata: İşlem tamamlanamadı');
+      }
     }
   };
 
@@ -486,7 +509,7 @@ export default function AdminProjectRequestsScreen() {
             {awaitingAssignmentRequests.length > 0 && (
               <>
                 <Text style={[styles.sectionTitle, { marginTop: 24 }]}>
-                  PERSONEL ATAMASI BEKLEYENLER ({awaitingAssignmentRequests.length})
+                  İŞLEM BEKLEYENLER ({awaitingAssignmentRequests.length})
                 </Text>
                 {awaitingAssignmentRequests.map((request) => {
                   const totalPersonnel = request.personnel_positions.reduce((sum: number, p: any) => sum + (p.count || 0), 0);
@@ -498,9 +521,19 @@ export default function AdminProjectRequestsScreen() {
                         <View style={[styles.statusBadge, { backgroundColor: COLORS.warning + '20' }]}>
                           <Clock size={14} color={COLORS.warning} />
                           <Text style={[styles.statusText, { color: COLORS.warning }]}>
-                            Atama Bekliyor
+                            İşlem Bekliyor
                           </Text>
                         </View>
+                      </View>
+
+                      <View style={styles.actions}>
+                        <TouchableOpacity
+                          style={styles.approveButton}
+                          onPress={() => handleComplete(request)}
+                        >
+                          <CheckCircle size={18} color="white" />
+                          <Text style={styles.approveButtonText}>İşlemi Tamamla</Text>
+                        </TouchableOpacity>
                       </View>
 
 

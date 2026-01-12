@@ -15,6 +15,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { ArrowLeft, Plus, Search, User, Pencil, Trash2, Camera } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system/legacy';
+import { decode } from 'base64-arraybuffer';
 import { COLORS } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 import { InputGroup } from '@/components/InputGroup';
@@ -293,12 +295,14 @@ export default function UsersManagement() {
       const fileName = `${Date.now()}.jpg`;
       const filePath = `${session.user.id}/${fileName}`;
 
-      const response = await fetch(uri);
-      const blob = await response.blob();
+      // Read file as base64
+      const base64 = await FileSystem.readAsStringAsync(uri, {
+        encoding: 'base64',
+      });
 
       const { error: uploadError } = await supabase.storage
         .from('avatars')
-        .upload(filePath, blob, {
+        .upload(filePath, decode(base64), {
           contentType: 'image/jpeg',
           upsert: true,
         });
@@ -313,7 +317,7 @@ export default function UsersManagement() {
       showAlert('Başarılı', 'Resim yüklendi');
     } catch (error) {
       console.error('Upload error:', error);
-      showAlert('Hata', 'Resim yüklenemedi');
+      showAlert('Hata', 'Resim yüklenemedi: ' + (error as any).message);
     }
   };
 
@@ -901,8 +905,9 @@ export default function UsersManagement() {
               <InputGroup
                 placeholder="Telefon (5XX...)"
                 value={formData.phone}
-                onChangeText={(text) => setFormData({ ...formData, phone: text })}
+                onChangeText={(text) => setFormData({ ...formData, phone: text.replace(/[^0-9]/g, '').slice(0, 10) })}
                 keyboardType="phone-pad"
+                maxLength={10}
               />
 
               {!editingUser && (
@@ -914,7 +919,9 @@ export default function UsersManagement() {
                 />
               )}
 
-              <Text style={styles.label}>Profil Resmi</Text>
+              <Text style={styles.label}>
+                Profil Resmi {formData.role === 'personnel' ? '(Zorunlu)' : ''}
+              </Text>
               {formData.avatar_url ? (
                 <View style={styles.avatarContainer}>
                   <Image source={{ uri: formData.avatar_url }} style={styles.avatarPreview} />

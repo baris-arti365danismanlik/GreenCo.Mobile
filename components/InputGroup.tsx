@@ -1,24 +1,17 @@
-import { View, Text, TextInput, StyleSheet } from 'react-native';
+import { View, Text, TextInput, StyleSheet, TextInputProps } from 'react-native';
 import { LucideIcon } from 'lucide-react-native';
 import { COLORS } from '@/constants/theme';
 
-type InputGroupProps = {
+type InputGroupProps = TextInputProps & {
   icon?: LucideIcon;
   label?: string;
-  placeholder?: string;
-  value?: string;
-  onChangeText?: (text: string) => void;
-  secureTextEntry?: boolean;
-  keyboardType?: 'default' | 'email-address' | 'numeric' | 'phone-pad';
   isError?: boolean;
   errorMessage?: string;
-  editable?: boolean;
 };
 
 export function InputGroup({
   icon: Icon,
   label,
-  placeholder,
   value,
   onChangeText,
   secureTextEntry,
@@ -26,6 +19,7 @@ export function InputGroup({
   isError,
   errorMessage,
   editable = true,
+  ...rest
 }: InputGroupProps) {
   return (
     <View style={styles.inputContainer}>
@@ -42,13 +36,13 @@ export function InputGroup({
             Icon && { paddingLeft: 45 },
             isError && { borderColor: COLORS.error },
           ]}
-          placeholder={placeholder}
           value={value}
           onChangeText={onChangeText}
           secureTextEntry={secureTextEntry}
           keyboardType={keyboardType}
           placeholderTextColor={COLORS.textLight}
           editable={editable}
+          {...rest}
         />
       </View>
       {isError && errorMessage && (
