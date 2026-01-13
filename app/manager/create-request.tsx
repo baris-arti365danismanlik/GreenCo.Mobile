@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { ArrowLeft, Plus, Trash2, Send } from 'lucide-react-native';
+import { ArrowLeft, Plus, Trash2, Send, X } from 'lucide-react-native';
 import { COLORS } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -93,6 +93,19 @@ export default function CreateRequestScreen() {
 
   const [notes, setNotes] = useState('');
 
+  // Team & Title additions
+  type ProjectTeam = {
+    id: string;
+    name: string;
+  };
+
+  const [requestTitle, setRequestTitle] = useState('');
+  const [teams, setTeams] = useState<ProjectTeam[]>([]);
+  const [selectedTeamId, setSelectedTeamId] = useState<string>('');
+  const [showCreateTeamModal, setShowCreateTeamModal] = useState(false);
+  const [newTeamName, setNewTeamName] = useState('');
+  const [creatingTeam, setCreatingTeam] = useState(false);
+
   const loadExistingRequest = async () => {
     if (!editId || !projectId) return;
 
@@ -134,6 +147,13 @@ export default function CreateRequestScreen() {
 
       setPositions(loadedPositions);
       setNotes(request.notes || '');
+
+      // Load teams if projectId exists
+      if (projectId) {
+        await loadTeams(projectId as string);
+      }
+      if (request.title) setRequestTitle(request.title);
+      if (request.team_id) setSelectedTeamId(request.team_id);
 
     } catch (error) {
       console.error('Talep yükleme hatası:', error);
@@ -340,6 +360,7 @@ export default function CreateRequestScreen() {
         setIsNewManager(false);
       }
       loadExistingProjectData(projectId);
+      loadTeams(projectId);
     }
   };
 
@@ -378,6 +399,99 @@ export default function CreateRequestScreen() {
       alert('Hata: ' + (error.message || 'Meslek türü eklenemedi'));
     } finally {
       setAddingNewType(false);
+    }
+  };
+
+  const loadTeams = async (projectId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('project_teams')
+        .select('id, name')
+        .eq('project_id', projectId)
+        .order('name');
+
+      if (error) throw error;
+      setTeams(data || []);
+    } catch (error) {
+    }
+  };
+
+  const handleDeleteTeam = (teamId: string) => {
+    if (isNewProject) {
+      setTeams(prev => prev.filter(t => t.id !== teamId));
+      if (selectedTeamId === teamId) {
+        setSelectedTeamId('');
+      }
+    } else {
+      if (teamId.startsWith('temp-')) {
+        setTeams(prev => prev.filter(t => t.id !== teamId));
+      } else {
+        supabase
+          .from('project_teams')
+          .delete()
+          .eq('id', teamId)
+          .then(({ error }) => {
+            if (error) {
+              console.error('Error deleting team:', error);
+              alert('Ekip silinirken hata oluştu.');
+            } else {
+              setTeams(prev => prev.filter(t => t.id !== teamId));
+              if (selectedTeamId === teamId) setSelectedTeamId('');
+            }
+          });
+      }
+    }
+  };
+
+  const handleCreateTeam = async () => {
+    if (!newTeamName.trim()) {
+      alert('Lütfen bir ekip adı girin');
+      return;
+    }
+
+    try {
+      // If it's a new project, just add to local state
+      if (isNewProject) {
+        const tempId = `temp-${Date.now()}`;
+        setTeams([...teams, { id: tempId, name: newTeamName.trim() }]);
+        setSelectedTeamId(tempId);
+        setNewTeamName('');
+        setShowCreateTeamModal(false);
+        return;
+      }
+
+      setCreatingTeam(true);
+
+      // If existing project, save to DB
+      if (!selectedProject) {
+        alert('Lütfen önce bir proje seçin');
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('project_teams')
+        .insert({
+          project_id: selectedProject,
+          name: newTeamName.trim(),
+          created_by: (await supabase.auth.getUser()).data.user?.id
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      setTeams([...teams, { id: data.id, name: data.name }]);
+      setSelectedTeamId(data.id);
+      setNewTeamName('');
+      setShowCreateTeamModal(false);
+      if (Platform.OS === 'web') {
+        window.alert('Yeni ekip oluşturuldu');
+      }
+    } catch (error: any) {
+      console.error('Error creating team:', error);
+      alert('Ekip oluşturulurken bir hata oluştu');
+    } finally {
+      setCreatingTeam(false);
     }
   };
 
@@ -475,6 +589,20 @@ export default function CreateRequestScreen() {
       return;
     }
 
+    if (!requestTitle.trim()) {
+      if (Platform.OS === 'web') {
+        window.alert('Lütfen talep başlığını girin');
+      }
+      return;
+    }
+
+    if (!isNewProject && !selectedTeamId) {
+      if (Platform.OS === 'web') {
+        window.alert('Lütfen bir ekip seçin veya yeni ekip oluşturun');
+      }
+      return;
+    }
+
     setLoading(true);
     try {
       let previousPositions: any[] = [];
@@ -532,6 +660,8 @@ export default function CreateRequestScreen() {
             personnel_positions: personnelPositionsData,
             notes: notes || null,
             updated_at: new Date().toISOString(),
+            title: requestTitle || null,
+            team_id: selectedTeamId || null,
           })
           .eq('id', editId);
 
@@ -544,6 +674,17 @@ export default function CreateRequestScreen() {
         // Geri döndüğünde güncel veriyi görsün diye router.back() kullan
         router.back();
       } else {
+        // Determine team parameters
+        let finalTeamId: string | null = selectedTeamId;
+        let newTeamName: string | null = null;
+
+        if (isNewProject && selectedTeamId?.startsWith('temp-')) {
+          // If it's a new project and a temp team is selected, DO NOT create it in DB yet.
+          // Instead, save the name to new_team_name column in request.
+          finalTeamId = null;
+          newTeamName = teams.find(t => t.id === selectedTeamId)?.name || null;
+        }
+
         const { error } = await supabase.from('personnel_requests').insert({
           project_id: isNewProject ? null : selectedProject || null,
           project_name: projectName,
@@ -559,7 +700,10 @@ export default function CreateRequestScreen() {
           requested_by: profile?.id,
           notes: notes || null,
           status: 'pending',
-        });
+          title: requestTitle || null,
+          team_id: finalTeamId || null,
+          new_team_name: newTeamName // Store proposed team name for admin approval
+        } as any); // Type assertion for new column
 
         if (error) throw error;
 
@@ -632,201 +776,49 @@ export default function CreateRequestScreen() {
 
   return (
     <>
-      <Modal visible={showNewTypeModal} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Yeni Meslek Türü Ekle</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Meslek türü adı (Örn: Komi)"
-              value={newTypeName}
-              onChangeText={setNewTypeName}
-            />
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.modalButtonCancel]}
-                onPress={() => {
-                  setShowNewTypeModal(false);
-                  setNewTypeName('');
-                }}
-              >
-                <Text style={styles.modalButtonTextCancel}>İptal</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.modalButtonConfirm, addingNewType && { opacity: 0.5 }]}
-                onPress={handleAddNewType}
-                disabled={addingNewType}
-              >
-                <Text style={styles.modalButtonTextConfirm}>
-                  {addingNewType ? 'Ekleniyor...' : 'Ekle'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
+
 
       <SafeAreaView style={styles.container} edges={['top']}>
         <View style={styles.header}>
-        <TouchableOpacity onPress={() => setStep('project-type')}>
-          <ArrowLeft size={24} color={COLORS.secondary} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Personel Talebi Oluştur</Text>
-        <View style={{ width: 24 }} />
-      </View>
+          <TouchableOpacity onPress={() => setStep('project-type')}>
+            <ArrowLeft size={24} color={COLORS.secondary} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Personel Talebi Oluştur</Text>
+          <View style={{ width: 24 }} />
+        </View>
 
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
-      >
-      <ScrollView
-        style={styles.content}
-        contentContainerStyle={{ paddingBottom: 40 }}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>PROJE BİLGİLERİ</Text>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+        >
+          <ScrollView
+            style={styles.content}
+            contentContainerStyle={{ paddingBottom: 40 }}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>PROJE BİLGİLERİ</Text>
 
-          {!isNewProject ? (
-            <View style={styles.field}>
-              <Text style={styles.label}>Proje <Text style={styles.required}>*</Text></Text>
-              {projects.length === 0 ? (
-                <Text style={styles.emptyText}>Henüz proje yok</Text>
-              ) : selectedProject ? (
-                <View style={styles.selectedContainer}>
-                  <Text style={styles.selectedValue}>
-                    {projects.find(p => p.id === selectedProject)?.name}
-                  </Text>
-                  <TouchableOpacity
-                    onPress={() => {
-                      setSelectedProject('');
-                      setProjectName('');
-                      setProjectStartDate('');
-                      setProjectEndDate('');
-                      setPositions([{ type: '', count: '', criminal_record: 'yok', certificates: '' }]);
-                    }}
-                    style={styles.clearButton}
-                  >
-                    <Text style={styles.clearButtonText}>Değiştir</Text>
-                  </TouchableOpacity>
-                </View>
-              ) : (
-                <>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Proje ara..."
-                    value={projectSearch}
-                    onChangeText={setProjectSearch}
-                  />
-                  <ScrollView style={styles.projectScrollView} nestedScrollEnabled>
-                    <View style={styles.selectContainer}>
-                      {filteredProjects.map((project) => (
-                        <TouchableOpacity
-                          key={project.id}
-                          style={styles.selectItem}
-                          onPress={() => {
-                            handleExistingProjectSelect(project.id);
-                            setProjectSearch('');
-                          }}
-                        >
-                          <Text style={styles.selectItemText}>
-                            {project.name}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  </ScrollView>
-                </>
-              )}
-            </View>
-          ) : (
-            <View style={styles.field}>
-              <Text style={styles.label}>Proje Adı <Text style={styles.required}>*</Text></Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Proje adını girin"
-                value={projectName}
-                onChangeText={setProjectName}
-              />
-            </View>
-          )}
-
-          <View style={styles.field}>
-            <Text style={styles.label}>Başlangıç Tarihi <Text style={styles.required}>*</Text></Text>
-            <TextInput
-              style={styles.input}
-              placeholder="YYYY-MM-DD (Örn: 2025-12-01)"
-              value={projectStartDate}
-              onChangeText={setProjectStartDate}
-            />
-          </View>
-
-          <View style={styles.field}>
-            <Text style={styles.label}>Bitiş Tarihi <Text style={styles.required}>*</Text></Text>
-            <TextInput
-              style={styles.input}
-              placeholder="YYYY-MM-DD (Örn: 2026-06-30)"
-              value={projectEndDate}
-              onChangeText={setProjectEndDate}
-            />
-          </View>
-
-          {isNewProject && (
-            <>
-              <View style={styles.field}>
-                <Text style={styles.label}>İl <Text style={styles.required}>*</Text></Text>
-                {projectCity ? (
-                  <View style={styles.selectedContainer}>
-                    <Text style={styles.selectedValue}>{projectCity}</Text>
-                    <TouchableOpacity
-                      onPress={() => {
-                        setProjectCity('');
-                        setProjectDistrict('');
-                      }}
-                      style={styles.clearButton}
-                    >
-                      <Text style={styles.clearButtonText}>Değiştir</Text>
-                    </TouchableOpacity>
-                  </View>
-                ) : (
-                  <>
-                    <TextInput
-                      style={styles.input}
-                      placeholder="İl ara..."
-                      value={citySearch}
-                      onChangeText={setCitySearch}
-                    />
-                    <ScrollView style={styles.typeScrollView} nestedScrollEnabled>
-                      <View style={styles.selectContainer}>
-                        {filteredCities.map((city) => (
-                          <TouchableOpacity
-                            key={city}
-                            style={styles.selectItem}
-                            onPress={() => {
-                              setProjectCity(city);
-                              setProjectDistrict('');
-                              setCitySearch('');
-                            }}
-                          >
-                            <Text style={styles.selectItemText}>{city}</Text>
-                          </TouchableOpacity>
-                        ))}
-                      </View>
-                    </ScrollView>
-                  </>
-                )}
-              </View>
-
-              {projectCity && (
+              {!isNewProject ? (
                 <View style={styles.field}>
-                  <Text style={styles.label}>İlçe <Text style={styles.required}>*</Text></Text>
-                  {projectDistrict ? (
+                  <Text style={styles.label}>Proje <Text style={styles.required}>*</Text></Text>
+                  {projects.length === 0 ? (
+                    <Text style={styles.emptyText}>Henüz proje yok</Text>
+                  ) : selectedProject ? (
                     <View style={styles.selectedContainer}>
-                      <Text style={styles.selectedValue}>{projectDistrict}</Text>
+                      <Text style={styles.selectedValue}>
+                        {projects.find(p => p.id === selectedProject)?.name}
+                      </Text>
                       <TouchableOpacity
-                        onPress={() => setProjectDistrict('')}
+                        onPress={() => {
+                          setSelectedProject('');
+                          setProjectName('');
+                          setProjectStartDate('');
+                          setProjectEndDate('');
+                          setPositions([{ type: '', count: '', criminal_record: 'yok', certificates: '' }]);
+                        }}
                         style={styles.clearButton}
                       >
                         <Text style={styles.clearButtonText}>Değiştir</Text>
@@ -836,22 +828,24 @@ export default function CreateRequestScreen() {
                     <>
                       <TextInput
                         style={styles.input}
-                        placeholder="İlçe ara..."
-                        value={districtSearch}
-                        onChangeText={setDistrictSearch}
+                        placeholder="Proje ara..."
+                        value={projectSearch}
+                        onChangeText={setProjectSearch}
                       />
-                      <ScrollView style={styles.typeScrollView} nestedScrollEnabled>
+                      <ScrollView style={styles.projectScrollView} nestedScrollEnabled>
                         <View style={styles.selectContainer}>
-                          {filteredDistricts.map((district) => (
+                          {filteredProjects.map((project) => (
                             <TouchableOpacity
-                              key={district}
+                              key={project.id}
                               style={styles.selectItem}
                               onPress={() => {
-                                setProjectDistrict(district);
-                                setDistrictSearch('');
+                                handleExistingProjectSelect(project.id);
+                                setProjectSearch('');
                               }}
                             >
-                              <Text style={styles.selectItemText}>{district}</Text>
+                              <Text style={styles.selectItemText}>
+                                {project.name}
+                              </Text>
                             </TouchableOpacity>
                           ))}
                         </View>
@@ -859,23 +853,50 @@ export default function CreateRequestScreen() {
                     </>
                   )}
                 </View>
+              ) : (
+                <View style={styles.field}>
+                  <Text style={styles.label}>Proje Adı <Text style={styles.required}>*</Text></Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Proje adını girin"
+                    value={projectName}
+                    onChangeText={setProjectName}
+                  />
+                </View>
               )}
-            </>
-          )}
 
-          {isNewProject && (
-            <View style={styles.field}>
-              <Text style={styles.label}>Proje Yöneticisi <Text style={styles.required}>*</Text></Text>
-              {!isNewManager ? (
+              <View style={styles.field}>
+                <Text style={styles.label}>Başlangıç Tarihi <Text style={styles.required}>*</Text></Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="YYYY-MM-DD (Örn: 2025-12-01)"
+                  value={projectStartDate}
+                  onChangeText={setProjectStartDate}
+                />
+              </View>
+
+              <View style={styles.field}>
+                <Text style={styles.label}>Bitiş Tarihi <Text style={styles.required}>*</Text></Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="YYYY-MM-DD (Örn: 2026-06-30)"
+                  value={projectEndDate}
+                  onChangeText={setProjectEndDate}
+                />
+              </View>
+
+              {isNewProject && (
                 <>
-                  {managers.length > 0 ? (
-                    selectedManager ? (
+                  <View style={styles.field}>
+                    <Text style={styles.label}>İl <Text style={styles.required}>*</Text></Text>
+                    {projectCity ? (
                       <View style={styles.selectedContainer}>
-                        <Text style={styles.selectedValue}>
-                          {managers.find(m => m.id === selectedManager)?.full_name}
-                        </Text>
+                        <Text style={styles.selectedValue}>{projectCity}</Text>
                         <TouchableOpacity
-                          onPress={() => setSelectedManager('')}
+                          onPress={() => {
+                            setProjectCity('');
+                            setProjectDistrict('');
+                          }}
                           style={styles.clearButton}
                         >
                           <Text style={styles.clearButtonText}>Değiştir</Text>
@@ -885,239 +906,440 @@ export default function CreateRequestScreen() {
                       <>
                         <TextInput
                           style={styles.input}
-                          placeholder="Proje yöneticisi ara..."
-                          value={managerSearch}
-                          onChangeText={setManagerSearch}
+                          placeholder="İl ara..."
+                          value={citySearch}
+                          onChangeText={setCitySearch}
                         />
-                        <ScrollView style={styles.projectScrollView} nestedScrollEnabled>
+                        <ScrollView style={styles.typeScrollView} nestedScrollEnabled>
                           <View style={styles.selectContainer}>
-                            {filteredManagers.map((manager) => (
+                            {filteredCities.map((city) => (
                               <TouchableOpacity
-                                key={manager.id}
+                                key={city}
                                 style={styles.selectItem}
                                 onPress={() => {
-                                  setSelectedManager(manager.id);
-                                  setManagerSearch('');
+                                  setProjectCity(city);
+                                  setProjectDistrict('');
+                                  setCitySearch('');
                                 }}
                               >
-                                <Text style={styles.selectItemText}>
-                                  {manager.full_name}
-                                </Text>
+                                <Text style={styles.selectItemText}>{city}</Text>
                               </TouchableOpacity>
                             ))}
                           </View>
                         </ScrollView>
                       </>
-                    )
-                  ) : (
-                    <Text style={styles.emptyText}>Henüz proje yöneticisi yok</Text>
+                    )}
+                  </View>
+
+                  {projectCity && (
+                    <View style={styles.field}>
+                      <Text style={styles.label}>İlçe <Text style={styles.required}>*</Text></Text>
+                      {projectDistrict ? (
+                        <View style={styles.selectedContainer}>
+                          <Text style={styles.selectedValue}>{projectDistrict}</Text>
+                          <TouchableOpacity
+                            onPress={() => setProjectDistrict('')}
+                            style={styles.clearButton}
+                          >
+                            <Text style={styles.clearButtonText}>Değiştir</Text>
+                          </TouchableOpacity>
+                        </View>
+                      ) : (
+                        <>
+                          <TextInput
+                            style={styles.input}
+                            placeholder="İlçe ara..."
+                            value={districtSearch}
+                            onChangeText={setDistrictSearch}
+                          />
+                          <ScrollView style={styles.typeScrollView} nestedScrollEnabled>
+                            <View style={styles.selectContainer}>
+                              {filteredDistricts.map((district) => (
+                                <TouchableOpacity
+                                  key={district}
+                                  style={styles.selectItem}
+                                  onPress={() => {
+                                    setProjectDistrict(district);
+                                    setDistrictSearch('');
+                                  }}
+                                >
+                                  <Text style={styles.selectItemText}>{district}</Text>
+                                </TouchableOpacity>
+                              ))}
+                            </View>
+                          </ScrollView>
+                        </>
+                      )}
+                    </View>
                   )}
-                  <TouchableOpacity
-                    style={styles.newProfileButton}
-                    onPress={() => setIsNewManager(true)}
-                  >
-                    <Plus size={16} color={COLORS.primary} />
-                    <Text style={styles.newProfileText}>Yeni Profil Oluştur</Text>
-                  </TouchableOpacity>
                 </>
-              ) : (
-                <View style={styles.newManagerSection}>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Ad Soyad"
-                    value={managerFullName}
-                    onChangeText={setManagerFullName}
-                  />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Telefon (+905551234567)"
-                    value={managerPhone}
-                    onChangeText={setManagerPhone}
-                  />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Şifre"
-                    secureTextEntry
-                    value={managerPassword}
-                    onChangeText={setManagerPassword}
-                  />
-                  <TouchableOpacity
-                    style={styles.cancelNewProfile}
-                    onPress={() => {
-                      setIsNewManager(false);
-                      setManagerFullName('');
-                      setManagerPhone('');
-                      setManagerPassword('');
-                    }}
-                  >
-                    <Text style={styles.cancelText}>İptal</Text>
-                  </TouchableOpacity>
-                </View>
               )}
-            </View>
-          )}
-        </View>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>TALEP EDİLEN PERSONEL</Text>
-
-          {positions.map((position, index) => {
-            const selectedType = personnelTypes.find(t => t.id === position.type);
-            const headerTitle = !isNewProject && selectedType && position.count
-              ? `Mevcut Personel #${index + 1}: ${position.count} ${selectedType.name}`
-              : `Personel #${index + 1}`;
-
-            return (
-            <View key={index} style={styles.positionCard}>
-              <View style={styles.positionHeader}>
-                <View style={styles.positionHeaderLeft}>
-                  <Text style={styles.positionTitle}>{headerTitle}</Text>
-                  {!isNewProject && selectedType && position.isEditing !== true && (
-                    <TouchableOpacity
-                      style={styles.editButton}
-                      onPress={() => togglePositionEdit(index)}
-                    >
-                      <Text style={styles.editButtonText}>Değiştir</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-                {positions.length > 1 && (
-                  <TouchableOpacity
-                    style={styles.removeButton}
-                    onPress={() => removePosition(index)}
-                  >
-                    <Text style={styles.removeButtonText}>Kaldır</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-
-              {(isNewProject || position.isEditing === true) && (
-              <>
-              <View style={styles.field}>
-                <Text style={styles.label}>Meslek Türü <Text style={styles.required}>*</Text></Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Meslek ara..."
-                  value={personnelTypeSearch}
-                  onChangeText={setPersonnelTypeSearch}
-                />
-                <ScrollView style={styles.typeScrollView} nestedScrollEnabled>
-                  <View style={styles.selectContainer}>
-                    {filteredPersonnelTypes.map((type) => (
+              {isNewProject && (
+                <View style={styles.field}>
+                  <Text style={styles.label}>Proje Yöneticisi <Text style={styles.required}>*</Text></Text>
+                  {!isNewManager ? (
+                    <>
+                      {managers.length > 0 ? (
+                        selectedManager ? (
+                          <View style={styles.selectedContainer}>
+                            <Text style={styles.selectedValue}>
+                              {managers.find(m => m.id === selectedManager)?.full_name}
+                            </Text>
+                            <TouchableOpacity
+                              onPress={() => setSelectedManager('')}
+                              style={styles.clearButton}
+                            >
+                              <Text style={styles.clearButtonText}>Değiştir</Text>
+                            </TouchableOpacity>
+                          </View>
+                        ) : (
+                          <>
+                            <TextInput
+                              style={styles.input}
+                              placeholder="Proje yöneticisi ara..."
+                              value={managerSearch}
+                              onChangeText={setManagerSearch}
+                            />
+                            <ScrollView style={styles.projectScrollView} nestedScrollEnabled>
+                              <View style={styles.selectContainer}>
+                                {filteredManagers.map((manager) => (
+                                  <TouchableOpacity
+                                    key={manager.id}
+                                    style={styles.selectItem}
+                                    onPress={() => {
+                                      setSelectedManager(manager.id);
+                                      setManagerSearch('');
+                                    }}
+                                  >
+                                    <Text style={styles.selectItemText}>
+                                      {manager.full_name}
+                                    </Text>
+                                  </TouchableOpacity>
+                                ))}
+                              </View>
+                            </ScrollView>
+                          </>
+                        )
+                      ) : (
+                        <Text style={styles.emptyText}>Henüz proje yöneticisi yok</Text>
+                      )}
                       <TouchableOpacity
-                        key={type.id}
-                        style={[
-                          styles.selectItem,
-                          position.type === type.id && styles.selectItemActive,
-                        ]}
+                        style={styles.newProfileButton}
+                        onPress={() => setIsNewManager(true)}
+                      >
+                        <Plus size={16} color={COLORS.primary} />
+                        <Text style={styles.newProfileText}>Yeni Profil Oluştur</Text>
+                      </TouchableOpacity>
+                    </>
+                  ) : (
+                    <View style={styles.newManagerSection}>
+                      <TextInput
+                        style={styles.input}
+                        placeholder="Ad Soyad"
+                        value={managerFullName}
+                        onChangeText={setManagerFullName}
+                      />
+                      <TextInput
+                        style={styles.input}
+                        placeholder="Telefon (+905551234567)"
+                        value={managerPhone}
+                        onChangeText={setManagerPhone}
+                      />
+                      <TextInput
+                        style={styles.input}
+                        placeholder="Şifre"
+                        secureTextEntry
+                        value={managerPassword}
+                        onChangeText={setManagerPassword}
+                      />
+                      <TouchableOpacity
+                        style={styles.cancelNewProfile}
                         onPress={() => {
-                          updatePosition(index, 'type', type.id);
-                          setPersonnelTypeSearch('');
+                          setIsNewManager(false);
+                          setManagerFullName('');
+                          setManagerPhone('');
+                          setManagerPassword('');
                         }}
                       >
-                        <Text
-                          style={[
-                            styles.selectItemText,
-                            position.type === type.id && styles.selectItemTextActive,
-                          ]}
-                        >
-                          {type.name}
-                        </Text>
+                        <Text style={styles.cancelText}>İptal</Text>
                       </TouchableOpacity>
-                    ))}
-                  </View>
-                </ScrollView>
-                <TouchableOpacity
-                  style={styles.newProfileButton}
-                  onPress={() => setShowNewTypeModal(true)}
-                >
-                  <Plus size={16} color={COLORS.primary} />
-                  <Text style={styles.newProfileText}>Yeni Meslek Türü Ekle</Text>
-                </TouchableOpacity>
-              </View>
-
-              <View style={styles.field}>
-                <Text style={styles.label}>Personel Adedi <Text style={styles.required}>*</Text></Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Örn: 5"
-                  keyboardType="numeric"
-                  value={position.count}
-                  onChangeText={(value) => updatePosition(index, 'count', value)}
-                />
-              </View>
-
-              <View style={styles.field}>
-                <Text style={styles.label}>Sabıka Kaydı</Text>
-                <View style={styles.selectContainer}>
-                  {CRIMINAL_RECORD_OPTIONS.map((option) => (
-                    <TouchableOpacity
-                      key={option}
-                      style={[
-                        styles.selectItem,
-                        position.criminal_record === option && styles.selectItemActive,
-                      ]}
-                      onPress={() => updatePosition(index, 'criminal_record', option)}
-                    >
-                      <Text
-                        style={[
-                          styles.selectItemText,
-                          position.criminal_record === option && styles.selectItemTextActive,
-                        ]}
-                      >
-                        Sabıka Kaydı {option.toUpperCase()}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
+                    </View>
+                  )}
                 </View>
-              </View>
-
-              <View style={styles.field}>
-                <Text style={styles.label}>Talep Edilen Sertifikalar</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Virgülle ayırın (Örn: İş Güvenliği, Forklift)"
-                  value={position.certificates}
-                  onChangeText={(value) => updatePosition(index, 'certificates', value)}
-                />
-              </View>
-              </>
               )}
             </View>
-            );
-          })}
 
-          <TouchableOpacity style={styles.addPositionButton} onPress={addPosition}>
-            <Plus size={20} color={COLORS.primary} />
-            <Text style={styles.addPositionText}>Personel Ekle</Text>
-          </TouchableOpacity>
-        </View>
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>TALEP DETAYLARI</Text>
 
-        <View style={styles.section}>
-          <Text style={styles.label}>Notlar (İsteğe bağlı)</Text>
-          <TextInput
-            style={[styles.input, styles.textArea]}
-            placeholder="Ek açıklamalar..."
-            multiline
-            numberOfLines={4}
-            value={notes}
-            onChangeText={setNotes}
-          />
-        </View>
+              <View style={styles.field}>
+                <Text style={styles.label}>Talep Başlığı <Text style={styles.required}>*</Text></Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Örn: Gündüz Vardiyası, Kar Temizleme vb."
+                  value={requestTitle}
+                  onChangeText={setRequestTitle}
+                />
+              </View>
 
-        <TouchableOpacity
-          style={[styles.submitButton, loading && styles.submitButtonDisabled]}
-          onPress={handleSubmit}
-          disabled={loading}
-        >
-          <Send size={20} color="white" />
-          <Text style={styles.submitButtonText}>
-            {loading ? 'Gönderiliyor...' : 'Talebi Gönder'}
-          </Text>
-        </TouchableOpacity>
-      </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+              <View style={styles.field}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <Text style={styles.label}>Ekip {isNewProject && '(Opsiyonel)'}</Text>
+                  <TouchableOpacity onPress={() => setShowCreateTeamModal(true)}>
+                    <Text style={{ color: COLORS.primary, fontSize: 13, fontWeight: '600' }}>+ Yeni Ekip</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexDirection: 'row', marginBottom: 8 }}>
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    {teams.map(team => (
+                      <View key={team.id} style={{ position: 'relative' }}>
+                        <TouchableOpacity
+                          style={[
+                            styles.typeCard, // Reusing style but smaller
+                            {
+                              padding: 12,
+                              minWidth: 100,
+                              backgroundColor: selectedTeamId === team.id ? '#e0f2fe' : 'white',
+                              borderColor: selectedTeamId === team.id ? COLORS.primary : COLORS.border,
+                              borderWidth: 1.5,
+                              paddingRight: 28 // Make room for delete button
+                            }
+                          ]}
+                          onPress={() => setSelectedTeamId(team.id)}
+                        >
+                          <Text style={[
+                            { fontSize: 14, fontWeight: '600', textAlign: 'center' },
+                            selectedTeamId === team.id ? { color: COLORS.primary } : { color: COLORS.text }
+                          ]}>
+                            {team.name}
+                          </Text>
+                        </TouchableOpacity>
+
+                        {(isNewProject || team.id.startsWith('temp-') || true) && (
+                          <TouchableOpacity
+                            style={{
+                              position: 'absolute',
+                              top: 4,
+                              right: 4,
+                              padding: 4,
+                              zIndex: 10
+                            }}
+                            onPress={() => handleDeleteTeam(team.id)}
+                          >
+                            <X size={14} color={COLORS.danger} />
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    ))}
+                    {teams.length === 0 && (
+                      <Text style={{ color: COLORS.textLight, fontStyle: 'italic', padding: 8 }}>
+                        Henüz ekip oluşturulmamış
+                      </Text>
+                    )}
+                  </View>
+                </ScrollView>
+              </View>
+            </View>
+
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>TALEP EDİLEN PERSONEL</Text>
+
+              {positions.map((position, index) => {
+                const selectedType = personnelTypes.find(t => t.id === position.type);
+                const headerTitle = !isNewProject && selectedType && position.count
+                  ? `Mevcut Personel #${index + 1}: ${position.count} ${selectedType.name}`
+                  : `Personel #${index + 1}`;
+
+                return (
+                  <View key={index} style={styles.positionCard}>
+                    <View style={styles.positionHeader}>
+                      <View style={styles.positionHeaderLeft}>
+                        <Text style={styles.positionTitle}>{headerTitle}</Text>
+                        {!isNewProject && selectedType && position.isEditing !== true && (
+                          <TouchableOpacity
+                            style={styles.editButton}
+                            onPress={() => togglePositionEdit(index)}
+                          >
+                            <Text style={styles.editButtonText}>Değiştir</Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                      {positions.length > 1 && (
+                        <TouchableOpacity
+                          style={styles.removeButton}
+                          onPress={() => removePosition(index)}
+                        >
+                          <Text style={styles.removeButtonText}>Kaldır</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+
+                    {(isNewProject || position.isEditing === true) && (
+                      <>
+                        <View style={styles.field}>
+                          <Text style={styles.label}>Meslek Türü <Text style={styles.required}>*</Text></Text>
+                          <TextInput
+                            style={styles.input}
+                            placeholder="Meslek ara..."
+                            value={personnelTypeSearch}
+                            onChangeText={setPersonnelTypeSearch}
+                          />
+                          <ScrollView style={styles.typeScrollView} nestedScrollEnabled>
+                            <View style={styles.selectContainer}>
+                              {filteredPersonnelTypes.map((type) => (
+                                <TouchableOpacity
+                                  key={type.id}
+                                  style={[
+                                    styles.selectItem,
+                                    position.type === type.id && styles.selectItemActive,
+                                  ]}
+                                  onPress={() => {
+                                    updatePosition(index, 'type', type.id);
+                                    setPersonnelTypeSearch('');
+                                  }}
+                                >
+                                  <Text
+                                    style={[
+                                      styles.selectItemText,
+                                      position.type === type.id && styles.selectItemTextActive,
+                                    ]}
+                                  >
+                                    {type.name}
+                                  </Text>
+                                </TouchableOpacity>
+                              ))}
+                            </View>
+                          </ScrollView>
+                          <TouchableOpacity
+                            style={styles.newProfileButton}
+                            onPress={() => setShowNewTypeModal(true)}
+                          >
+                            <Plus size={16} color={COLORS.primary} />
+                            <Text style={styles.newProfileText}>Yeni Meslek Türü Ekle</Text>
+                          </TouchableOpacity>
+                        </View>
+
+                        <View style={styles.field}>
+                          <Text style={styles.label}>Personel Adedi <Text style={styles.required}>*</Text></Text>
+                          <TextInput
+                            style={styles.input}
+                            placeholder="Örn: 5"
+                            keyboardType="numeric"
+                            value={position.count}
+                            onChangeText={(value) => updatePosition(index, 'count', value)}
+                          />
+                        </View>
+
+                        <View style={styles.field}>
+                          <Text style={styles.label}>Sabıka Kaydı</Text>
+                          <View style={styles.selectContainer}>
+                            {CRIMINAL_RECORD_OPTIONS.map((option) => (
+                              <TouchableOpacity
+                                key={option}
+                                style={[
+                                  styles.selectItem,
+                                  position.criminal_record === option && styles.selectItemActive,
+                                ]}
+                                onPress={() => updatePosition(index, 'criminal_record', option)}
+                              >
+                                <Text
+                                  style={[
+                                    styles.selectItemText,
+                                    position.criminal_record === option && styles.selectItemTextActive,
+                                  ]}
+                                >
+                                  Sabıka Kaydı {option.toUpperCase()}
+                                </Text>
+                              </TouchableOpacity>
+                            ))}
+                          </View>
+                        </View>
+
+                        <View style={styles.field}>
+                          <Text style={styles.label}>Talep Edilen Sertifikalar</Text>
+                          <TextInput
+                            style={styles.input}
+                            placeholder="Virgülle ayırın (Örn: İş Güvenliği, Forklift)"
+                            value={position.certificates}
+                            onChangeText={(value) => updatePosition(index, 'certificates', value)}
+                          />
+                        </View>
+                      </>
+                    )}
+                  </View>
+                );
+              })}
+
+              <TouchableOpacity style={styles.addPositionButton} onPress={addPosition}>
+                <Plus size={20} color={COLORS.primary} />
+                <Text style={styles.addPositionText}>Personel Ekle</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.section}>
+              <Text style={styles.label}>Notlar (İsteğe bağlı)</Text>
+              <TextInput
+                style={[styles.input, styles.textArea]}
+                placeholder="Ek açıklamalar..."
+                multiline
+                numberOfLines={4}
+                value={notes}
+                onChangeText={setNotes}
+              />
+            </View>
+
+            <TouchableOpacity
+              style={[styles.submitButton, loading && styles.submitButtonDisabled]}
+              onPress={handleSubmit}
+              disabled={loading}
+            >
+              <Send size={20} color="white" />
+              <Text style={styles.submitButtonText}>
+                {loading ? 'Gönderiliyor...' : 'Talebi Gönder'}
+              </Text>
+            </TouchableOpacity>
+          </ScrollView >
+        </KeyboardAvoidingView >
+
+        {showCreateTeamModal && (
+          <View style={[styles.modalOverlay, { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 9999, elevation: 5 }]}>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>Yeni Ekip Oluştur</Text>
+              <Text style={{ marginBottom: 12, color: COLORS.textLight, fontSize: 13 }}>
+                Projedeki personelleri gruplamak için bir ekip adı girin (Örn: Elektrik Ekibi, Tesisat Ekibi).
+              </Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Ekip adı"
+                value={newTeamName}
+                onChangeText={setNewTeamName}
+              />
+              <View style={styles.modalButtons}>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.modalButtonCancel]}
+                  onPress={() => {
+                    setShowCreateTeamModal(false);
+                    setNewTeamName('');
+                  }}
+                >
+                  <Text style={styles.modalButtonTextCancel}>İptal</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.modalButtonConfirm, creatingTeam && { opacity: 0.5 }]}
+                  onPress={handleCreateTeam}
+                  disabled={creatingTeam}
+                >
+                  <Text style={styles.modalButtonTextConfirm}>
+                    {creatingTeam ? 'Oluşturuluyor...' : 'Oluştur'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        )}
+      </SafeAreaView >
     </>
   );
 }

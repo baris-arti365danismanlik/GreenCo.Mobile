@@ -1,4 +1,4 @@
-import { View, Text, TextInput, StyleSheet, TextInputProps } from 'react-native';
+import { View, Text, TextInput, StyleSheet, TextInputProps, TouchableOpacity } from 'react-native';
 import { LucideIcon } from 'lucide-react-native';
 import { COLORS } from '@/constants/theme';
 
@@ -7,10 +7,14 @@ type InputGroupProps = TextInputProps & {
   label?: string;
   isError?: boolean;
   errorMessage?: string;
+  rightIcon?: LucideIcon;
+  onRightIconPress?: () => void;
 };
 
 export function InputGroup({
   icon: Icon,
+  rightIcon: RightIcon,
+  onRightIconPress,
   label,
   value,
   onChangeText,
@@ -34,6 +38,7 @@ export function InputGroup({
           style={[
             styles.input,
             Icon && { paddingLeft: 45 },
+            RightIcon && { paddingRight: 45 },
             isError && { borderColor: COLORS.error },
           ]}
           value={value}
@@ -44,6 +49,17 @@ export function InputGroup({
           editable={editable}
           {...rest}
         />
+        {RightIcon && (
+          <View style={styles.inputRightIcon}>
+            {onRightIconPress ? (
+              <TouchableOpacity onPress={onRightIconPress}>
+                <RightIcon size={20} color={COLORS.textLight} />
+              </TouchableOpacity>
+            ) : (
+              <RightIcon size={20} color={COLORS.textLight} />
+            )}
+          </View>
+        )}
       </View>
       {isError && errorMessage && (
         <Text style={styles.errorText}>{errorMessage}</Text>
@@ -71,6 +87,11 @@ const styles = StyleSheet.create({
   inputIcon: {
     position: 'absolute',
     left: 12,
+    zIndex: 1,
+  },
+  inputRightIcon: {
+    position: 'absolute',
+    right: 12,
     zIndex: 1,
   },
   input: {

@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { ArrowLeft, Plus, Trash2, Send, Building, Pencil } from 'lucide-react-native';
+import { ArrowLeft, Plus, Trash2, Send, Building, Pencil, X } from 'lucide-react-native';
 import { COLORS } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -96,6 +96,20 @@ export default function CreateRequestScreen() {
   ]);
 
   const [notes, setNotes] = useState('');
+
+  // Team & Title additions
+  type ProjectTeam = {
+    id: string;
+    name: string;
+  };
+
+  const [requestTitle, setRequestTitle] = useState('');
+  const [teams, setTeams] = useState<ProjectTeam[]>([]);
+  const [selectedTeamId, setSelectedTeamId] = useState<string>('');
+  const [showNewTeamModal, setShowNewTeamModal] = useState(false); // For Team, not Type (reusing naming pattern if confused, but unique name is better)
+  const [showCreateTeamModal, setShowCreateTeamModal] = useState(false);
+  const [newTeamName, setNewTeamName] = useState('');
+  const [creatingTeam, setCreatingTeam] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -380,6 +394,21 @@ export default function CreateRequestScreen() {
         console.log('  ❌ No project_manager_id');
       }
       loadExistingProjectData(projectId);
+      loadTeams(projectId);
+    }
+  };
+
+  const loadTeams = async (projectId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('project_teams')
+        .select('id, name')
+        .eq('project_id', projectId)
+        .order('name');
+
+      if (error) throw error;
+      setTeams(data || []);
+    } catch (error) {
     }
   };
 
@@ -418,6 +447,103 @@ export default function CreateRequestScreen() {
       alert('Hata: ' + (error.message || 'Meslek türü eklenemedi'));
     } finally {
       setAddingNewType(false);
+    }
+  };
+
+  const handleDeleteTeam = (teamId: string) => {
+    // Only allow deleting temp teams (created in this session for new project)
+    // OR allow deleting newly created teams if logic supports it.
+    // For now, simplify: if it's a new project, we can just remove from state.
+
+    if (isNewProject) {
+      setTeams(prev => prev.filter(t => t.id !== teamId));
+      if (selectedTeamId === teamId) {
+        setSelectedTeamId('');
+      }
+    } else {
+      // If it is an existing project, deleting a team might be complex (DB delete).
+      // But user says "I created a team here", so maybe they just want to remove what they just added.
+      // Only allow deleting if it was just added (maybe store addedTeamIds?) or just allow all?
+      // Let's allow deleting from state first. If it was added to DB, we might need a DB call.
+      // However, for existing projects, handleCreateTeam currently DOES insert to DB immediately?
+      // Let's check handleCreateTeam... wait, previous view showed:
+      // if (!isNewProject) -> insert into project_teams.
+      // So we need to delete from DB if !isNewProject.
+
+      if (teamId.startsWith('temp-')) {
+        setTeams(prev => prev.filter(t => t.id !== teamId));
+      } else {
+        // It's a real DB team.
+        // Ask for confirmation or just delete? User wants to remove what they created.
+        // Since we don't have a backend delete endpoint easily reachable here without writing one,
+        // checking if we can just delete from project_teams.
+        // Let's try to delete from DB.
+        supabase
+          .from('project_teams')
+          .delete()
+          .eq('id', teamId)
+          .then(({ error }) => {
+            if (error) {
+              console.error('Error deleting team:', error);
+              alert('Ekip silinirken hata oluştu.');
+            } else {
+              setTeams(prev => prev.filter(t => t.id !== teamId));
+              if (selectedTeamId === teamId) setSelectedTeamId('');
+            }
+          });
+      }
+    }
+  };
+
+  const handleCreateTeam = async () => {
+    if (!newTeamName.trim()) {
+      alert('Lütfen bir ekip adı girin');
+      return;
+    }
+
+    try {
+      // If it's a new project, just add to local state
+      if (isNewProject) {
+        const tempId = `temp-${Date.now()}`;
+        setTeams([...teams, { id: tempId, name: newTeamName.trim() }]);
+        setSelectedTeamId(tempId);
+        setNewTeamName('');
+        setShowCreateTeamModal(false);
+        return;
+      }
+
+      setCreatingTeam(true);
+
+      // If existing project, save to DB
+      if (!selectedProject) {
+        alert('Lütfen önce bir proje seçin');
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('project_teams')
+        .insert({
+          project_id: selectedProject,
+          name: newTeamName.trim(),
+          created_by: (await supabase.auth.getUser()).data.user?.id
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      setTeams([...teams, { id: data.id, name: data.name }]);
+      setSelectedTeamId(data.id);
+      setNewTeamName('');
+      setShowCreateTeamModal(false);
+      if (Platform.OS === 'web') {
+        window.alert('Yeni ekip oluşturuldu');
+      }
+    } catch (error: any) {
+      console.error('Error creating team:', error);
+      alert('Ekip oluşturulurken bir hata oluştu');
+    } finally {
+      setCreatingTeam(false);
     }
   };
 
@@ -532,6 +658,27 @@ export default function CreateRequestScreen() {
       return;
     }
 
+    if (emptyPosition) {
+      if (Platform.OS === 'web') {
+        window.alert('Lütfen tüm personel pozisyonları için meslek türü ve adet bilgilerini doldurun');
+      }
+      return;
+    }
+
+    if (!requestTitle.trim()) {
+      if (Platform.OS === 'web') {
+        window.alert('Lütfen talep başlığını girin');
+      }
+      return;
+    }
+
+    if (!selectedTeamId) { // This check applies to both new and existing projects now
+      if (Platform.OS === 'web') {
+        window.alert('Lütfen bir ekip seçin veya yeni ekip oluşturun');
+      }
+      return;
+    }
+
     setLoading(true);
     try {
       // Mevcut proje için: önceki talepten değişiklikleri tespit et
@@ -606,6 +753,17 @@ export default function CreateRequestScreen() {
         // Geri döndüğünde güncel veriyi görsün diye router.back() kullan
         router.back();
       } else {
+        // Determine team parameters
+        let finalTeamId: string | null = selectedTeamId;
+        let newTeamName: string | null = null;
+
+        if (isNewProject && selectedTeamId?.startsWith('temp-')) {
+          // If it's a new project and a temp team is selected, DO NOT create it in DB yet.
+          // Instead, save the name to new_team_name column in request.
+          finalTeamId = null;
+          newTeamName = teams.find(t => t.id === selectedTeamId)?.name || null;
+        }
+
         const { error } = await supabase.from('personnel_requests').insert({
           project_id: isNewProject ? null : selectedProject || null,
           project_name: projectName,
@@ -621,7 +779,10 @@ export default function CreateRequestScreen() {
           requested_by: profile?.id,
           notes: notes || null,
           status: 'pending',
-        });
+          title: requestTitle || null,
+          team_id: finalTeamId || null,
+          new_team_name: newTeamName // Store proposed team name for admin approval
+        } as any); // Type assertion for new column
 
         if (error) throw error;
 
@@ -1040,6 +1201,83 @@ export default function CreateRequestScreen() {
               )}
             </View>
 
+
+
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>TALEP DETAYLARI</Text>
+
+              <View style={styles.field}>
+                <Text style={styles.label}>Talep Başlığı <Text style={styles.required}>*</Text></Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Örn: Gündüz Vardiyası, Kar Temizleme vb."
+                  value={requestTitle}
+                  onChangeText={setRequestTitle}
+                />
+              </View>
+
+              <View style={styles.field}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <Text style={styles.label}>Ekip {isNewProject && '(Opsiyonel)'}</Text>
+                  <TouchableOpacity onPress={() => setShowCreateTeamModal(true)}>
+                    <Text style={{ color: COLORS.primary, fontSize: 13, fontWeight: '600' }}>+ Yeni Ekip</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexDirection: 'row', marginBottom: 8 }}>
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    {teams.map(team => (
+                      <View key={team.id} style={{ position: 'relative' }}>
+                        <TouchableOpacity
+                          style={[
+                            styles.typeCard, // Reusing style but smaller
+                            {
+                              padding: 12,
+                              minWidth: 100,
+                              backgroundColor: selectedTeamId === team.id ? '#e0f2fe' : 'white',
+                              borderColor: selectedTeamId === team.id ? COLORS.primary : COLORS.border,
+                              borderWidth: 1.5,
+                              paddingRight: 28 // Make room for delete button
+                            }
+                          ]}
+                          onPress={() => setSelectedTeamId(team.id)}
+                        >
+                          <Text style={[
+                            { fontSize: 14, fontWeight: '600', textAlign: 'center' },
+                            selectedTeamId === team.id ? { color: COLORS.primary } : { color: COLORS.text }
+                          ]}>
+                            {team.name}
+                          </Text>
+                        </TouchableOpacity>
+
+                        {(isNewProject || team.id.startsWith('temp-') || true) && (
+                          <TouchableOpacity
+                            style={{
+                              position: 'absolute',
+                              top: 4,
+                              right: 4,
+                              padding: 4,
+                              zIndex: 10
+                            }}
+                            onPress={() => handleDeleteTeam(team.id)}
+                          >
+                            <X size={14} color={COLORS.danger} />
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    ))}
+                    {teams.length === 0 && (
+                      <Text style={{ color: COLORS.textLight, fontStyle: 'italic', padding: 8 }}>
+                        Henüz ekip oluşturulmamış
+                      </Text>
+                    )}
+                  </View>
+                </ScrollView>
+              </View>
+            </View>
+
+
+
             {source !== 'technical' && (
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>TALEP EDİLEN PERSONEL</Text>
@@ -1280,6 +1518,43 @@ export default function CreateRequestScreen() {
             </View>
           </View>
         </Modal>
+
+        {showCreateTeamModal && (
+          <View style={[styles.modalOverlay, { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 9999, elevation: 5 }]}>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>Yeni Ekip Oluştur</Text>
+              <Text style={{ marginBottom: 12, color: COLORS.textLight, fontSize: 13 }}>
+                Projedeki personelleri gruplamak için bir ekip adı girin (Örn: Elektrik Ekibi, Tesisat Ekibi).
+              </Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Ekip adı"
+                value={newTeamName}
+                onChangeText={setNewTeamName}
+              />
+              <View style={styles.modalButtons}>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.modalButtonCancel]}
+                  onPress={() => {
+                    setShowCreateTeamModal(false);
+                    setNewTeamName('');
+                  }}
+                >
+                  <Text style={styles.modalButtonTextCancel}>İptal</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.modalButtonConfirm, creatingTeam && { opacity: 0.5 }]}
+                  onPress={handleCreateTeam}
+                  disabled={creatingTeam}
+                >
+                  <Text style={styles.modalButtonTextConfirm}>
+                    {creatingTeam ? 'Oluşturuluyor...' : 'Oluştur'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        )}
       </SafeAreaView>
     </>
   );

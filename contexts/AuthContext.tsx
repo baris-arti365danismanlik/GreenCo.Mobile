@@ -111,11 +111,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             console.log('User signed in, loading profile. hasLoadedProfile:', hasLoadedProfile.current);
             setSession(session);
             setUser(session.user);
-            if (!hasLoadedProfile.current) {
-              await loadProfile(session.user.id);
-            } else {
-              console.log('Profile already loaded, skipping loadProfile');
-            }
+            console.log('User signed in, reloading profile...');
+            setSession(session);
+            setUser(session.user);
+            await loadProfile(session.user.id);
           } else if (event === 'TOKEN_REFRESHED') {
             console.log('Token refreshed, reloading profile');
             setSession(session);

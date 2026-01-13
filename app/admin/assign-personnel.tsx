@@ -703,7 +703,10 @@ export default function AssignPersonnelScreen() {
       </View>
 
       <Modal visible={rateModalVisible} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Ücret Bilgileri</Text>
@@ -765,7 +768,7 @@ export default function AssignPersonnelScreen() {
               </View>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView >
   );

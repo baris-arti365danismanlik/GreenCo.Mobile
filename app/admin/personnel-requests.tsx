@@ -12,7 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
-import { ArrowLeft, CheckCircle, XCircle, Clock, User, Calendar, Building, Plus } from 'lucide-react-native';
+import { ArrowLeft, CheckCircle, XCircle, Clock, User, Calendar, Building, Plus, Users } from 'lucide-react-native';
 import { COLORS } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -35,6 +35,8 @@ type PersonnelRequest = {
   notes: string | null;
   created_at: string;
   requester: { full_name: string };
+  new_team_name?: string | null;
+  team_id?: string | null;
 };
 
 export default function AdminPersonnelRequestsScreen() {
@@ -65,7 +67,8 @@ export default function AdminPersonnelRequestsScreen() {
           .from('personnel_requests')
           .select(`
             *,
-            requester:profiles!personnel_requests_requested_by_fkey(full_name, company_id)
+            requester:profiles!personnel_requests_requested_by_fkey(full_name, company_id),
+            team:project_teams(name)
           `)
           .order('created_at', { ascending: false }),
         supabase
@@ -250,6 +253,40 @@ export default function AdminPersonnelRequestsScreen() {
         }
       }
 
+      // Handle New Team Creation
+      let teamId = request.team_id; // Start with existing team ID if any
+
+      if (request.new_team_name && projectId) {
+        // Check if team already exists for this project (unlikely if it's "new", but good to check)
+        const { data: existingTeam } = await supabase
+          .from('project_teams')
+          .select('id')
+          .eq('project_id', projectId)
+          .eq('name', request.new_team_name)
+          .maybeSingle();
+
+        if (existingTeam) {
+          teamId = existingTeam.id;
+        } else {
+          const { data: newTeam, error: teamError } = await supabase
+            .from('project_teams')
+            .insert({
+              project_id: projectId,
+              name: request.new_team_name
+            })
+            .select()
+            .single();
+
+          if (teamError) {
+            console.error('Error creating team:', teamError);
+            // Don't block approval? Or verify? Let's log warning but continue if possible, 
+            // but ideally we should block. Throwing error is safer.
+            throw new Error('Ekip oluşturulurken hata: ' + teamError.message);
+          }
+          teamId = newTeam.id;
+        }
+      }
+
       if (projectId && managerId) {
         const { error: assignError } = await supabase
           .from('project_managers')
@@ -271,6 +308,7 @@ export default function AdminPersonnelRequestsScreen() {
           approved_at: new Date().toISOString(),
           project_id: projectId,
           project_manager_id: managerId,
+          team_id: teamId // Update team_id if created
         })
         .eq('id', request.id);
 
@@ -454,6 +492,25 @@ export default function AdminPersonnelRequestsScreen() {
                             <Text style={styles.infoCardValue}>Mevcut yönetici</Text>
                           )}
                         </View>
+
+                        {(request.new_team_name || (request as any).team?.name) && (
+                          <View style={styles.infoCard}>
+                            <Text style={styles.infoCardTitle}>
+                              {request.new_team_name ? 'Önerilen Ekip' : 'Seçilen Ekip'}
+                            </Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                              <Users size={16} color={COLORS.primary} />
+                              <Text style={styles.infoCardValue}>
+                                {request.new_team_name || (request as any).team?.name}
+                              </Text>
+                              {request.new_team_name && (
+                                <View style={styles.newBadge}>
+                                  <Text style={styles.newBadgeText}>YENİ</Text>
+                                </View>
+                              )}
+                            </View>
+                          </View>
+                        )}
 
                         <View style={styles.infoCard}>
                           <Text style={styles.infoCardTitle}>Talep Eden</Text>

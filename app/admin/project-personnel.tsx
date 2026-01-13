@@ -8,6 +8,7 @@ import {
   Modal,
   TextInput,
   Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -534,7 +535,10 @@ export default function ProjectPersonnelScreen() {
       </Modal>
 
       <Modal visible={rateModalVisible} transparent animationType="slide">
-        <View style={styles.rateModalOverlay}>
+        <KeyboardAvoidingView
+          style={styles.rateModalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
           <View style={styles.rateModalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Ücret Bilgileri</Text>
@@ -598,7 +602,7 @@ export default function ProjectPersonnelScreen() {
               </View>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );

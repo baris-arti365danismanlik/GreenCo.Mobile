@@ -41,6 +41,8 @@ type PersonnelInfo = {
   avatar_url?: string;
   personnel_type?: string;
   isWorking?: boolean;
+  averageRating?: number;
+  ratingCount?: number;
 };
 
 type MonthStats = {
@@ -130,12 +132,35 @@ export default function ManagerPersonnelAttendanceScreen() {
 
         const isWorking = todayAttendance?.some(r => r.check_in_time && !r.check_out_time) || false;
 
+        // Fetch all-time stats for average rating
+        const { data: allRatings } = await supabase
+          .from('attendance_records')
+          .select('performance_rating')
+          .eq('worker_id', personnelId)
+          .eq('project_id', projectId)
+          .not('performance_rating', 'is', null);
+
+        let averageRating = undefined;
+        let ratingCount = 0;
+
+        if (allRatings && allRatings.length > 0) {
+          const totalInfo = allRatings.reduce((acc, curr) => ({
+            sum: acc.sum + (curr.performance_rating || 0),
+            count: acc.count + 1
+          }), { sum: 0, count: 0 });
+
+          averageRating = totalInfo.sum / totalInfo.count;
+          ratingCount = totalInfo.count;
+        }
+
         const personnelData = {
           id: data.id,
           full_name: data.full_name,
           avatar_url: data.avatar_url || undefined,
           personnel_type: (data.personnel_types as any)?.name || undefined,
           isWorking: isWorking,
+          averageRating,
+          ratingCount,
         };
         setPersonnel(personnelData);
       }
@@ -412,6 +437,27 @@ export default function ManagerPersonnelAttendanceScreen() {
             {personnel?.personnel_type && (
               <Text style={styles.personnelType}>{personnel.personnel_type}</Text>
             )}
+
+            {personnel?.averageRating !== undefined && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4, gap: 4 }}>
+                <View style={{ flexDirection: 'row', gap: 1 }}>
+                  {[...Array(5)].map((_, i) => (
+                    <Star
+                      key={i}
+                      size={14}
+                      color={i < Math.round(personnel.averageRating || 0) ? "#fbbf24" : "#e5e7eb"}
+                      fill={i < Math.round(personnel.averageRating || 0) ? "#fbbf24" : "transparent"}
+                    />
+                  ))}
+                </View>
+                <Text style={{ fontSize: 12, color: COLORS.text, fontWeight: '600' }}>
+                  {personnel.averageRating.toFixed(1)}
+                </Text>
+                <Text style={{ fontSize: 11, color: COLORS.textLight }}>
+                  ({personnel.ratingCount} değerlendirme)
+                </Text>
+              </View>
+            )}
           </View>
         </View>
 
@@ -488,13 +534,30 @@ export default function ManagerPersonnelAttendanceScreen() {
                       </Text>
                     </View>
                     {record.status === 'complete' && (record.performance_rating || record.performance_notes) && (
-                      <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2, gap: 4 }}>
+                      <View style={{ marginTop: 4 }}>
                         {record.performance_rating && (
-                          <Star size={12} color="#fbbf24" fill="#fbbf24" />
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+                            {[...Array(5)].map((_, i) => (
+                              <Star
+                                key={i}
+                                size={12}
+                                color={i < (record.performance_rating || 0) ? "#fbbf24" : "#e5e7eb"}
+                                fill={i < (record.performance_rating || 0) ? "#fbbf24" : "transparent"}
+                              />
+                            ))}
+                            <Text style={{ fontSize: 11, color: COLORS.textLight, marginLeft: 4 }}>
+                              ({record.performance_rating} Yıldız)
+                            </Text>
+                          </View>
                         )}
-                        <Text style={{ fontSize: 10, color: COLORS.textLight }}>
-                          {record.performance_notes ? 'Notlu Puanlama' : 'Puanlandı'}
-                        </Text>
+                        {record.performance_notes && (
+                          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2, gap: 4 }}>
+                            <MessageSquare size={12} color={COLORS.textLight} />
+                            <Text style={{ fontSize: 11, color: COLORS.textLight, fontStyle: 'italic' }}>
+                              {record.performance_notes}
+                            </Text>
+                          </View>
+                        )}
                       </View>
                     )}
 

@@ -10,7 +10,7 @@ import {
   Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Phone, Lock, KeyRound } from 'lucide-react-native';
+import { Phone, Lock, KeyRound, Eye, EyeOff } from 'lucide-react-native';
 import { COLORS } from '@/constants/theme';
 import { InputGroup } from '@/components/InputGroup';
 import { useAuth } from '@/contexts/AuthContext';
@@ -22,6 +22,7 @@ export default function SignIn() {
   const [step, setStep] = useState<'phone' | 'password' | 'otp' | 'newPassword'>('phone');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -127,7 +128,9 @@ export default function SignIn() {
                 placeholder="Şifre"
                 value={password}
                 onChangeText={setPassword}
-                secureTextEntry
+                secureTextEntry={!showPassword}
+                rightIcon={showPassword ? EyeOff : Eye}
+                onRightIconPress={() => setShowPassword(!showPassword)}
               />
               <TouchableOpacity
                 style={styles.primaryBtn}

@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, TextInput, Modal, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, TextInput, Modal, Platform, KeyboardAvoidingView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'expo-router';
@@ -17,11 +17,15 @@ import {
   Camera,
   Briefcase,
   ArrowLeft,
+  Lock,
+  Eye,
+  EyeOff,
 } from 'lucide-react-native';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { TURKISH_CITIES, DISTRICTS } from '@/constants/locations';
 import * as ImagePicker from 'expo-image-picker';
+import { InputGroup } from '@/components/InputGroup';
 import { PersonnelTypeSelector } from '@/components/PersonnelTypeSelector';
 
 export default function ProfileScreen() {
@@ -39,6 +43,16 @@ export default function ProfileScreen() {
   const [birthDate, setBirthDate] = useState(profile?.birth_date || '');
   const [uploading, setUploading] = useState(false);
   const [selectedPersonnelTypeIds, setSelectedPersonnelTypeIds] = useState<string[]>([]);
+
+  // Password Change State
+  const [changePasswordModal, setChangePasswordModal] = useState(false);
+  const [oldPassword, setOldPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showOldPassword, setShowOldPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [loadingPassword, setLoadingPassword] = useState(false);
 
   useEffect(() => {
     const filtered = TURKISH_CITIES.filter(c =>
@@ -142,6 +156,74 @@ export default function ProfileScreen() {
       setEditLocationModal(false);
     } catch (error: any) {
       Alert.alert('Hata', error.message || 'Güncelleme başarısız');
+    }
+  };
+
+  const showAlert = (title: string, message: string) => {
+    if (Platform.OS === 'web') {
+      window.alert(`${title}\n${message}`);
+    } else {
+      Alert.alert(title, message);
+    }
+  };
+
+  const handleChangePassword = async () => {
+    console.log('handleChangePassword pressed');
+    console.log('Values:', { oldPassword, newPassword, confirmPassword });
+
+    if (!oldPassword || !newPassword || !confirmPassword) {
+      console.log('Validation failed: Missing fields');
+      showAlert('Hata', 'Lütfen tüm alanları doldurun');
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      console.log('Validation failed: Passwords do not match');
+      showAlert('Hata', 'Yeni şifreler eşleşmiyor');
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      console.log('Validation failed: Password too short');
+      showAlert('Hata', 'Yeni şifre en az 6 karakter olmalıdır');
+      return;
+    }
+
+    try {
+      setLoadingPassword(true);
+      console.log('Verifying old password...');
+
+      // 1. Verify old password by trying to sign in
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: user?.email || '',
+        password: oldPassword,
+      });
+
+      if (signInError) {
+        console.error('Sign in error:', signInError);
+        throw new Error('Mevcut şifreniz hatalı');
+      }
+
+      console.log('Old password verified. Updating user...');
+
+      // 2. Update to new password
+      const { error: updateError } = await supabase.auth.updateUser({
+        password: newPassword
+      });
+
+      if (updateError) throw updateError;
+
+      console.log('Password updated successfully');
+      showAlert('Başarılı', 'Şifreniz güncellendi');
+      setChangePasswordModal(false);
+      setOldPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (error: any) {
+      console.error('Update error:', error);
+      showAlert('Hata', error.message || 'Şifre güncellenemedi');
+    } finally {
+      setLoadingPassword(false);
     }
   };
 
@@ -463,6 +545,22 @@ export default function ProfileScreen() {
                   </View>
                   <Edit2 size={16} color="#6b7280" />
                 </TouchableOpacity>
+                <>
+                  <View style={styles.divider} />
+                  <TouchableOpacity
+                    style={styles.infoRow}
+                    onPress={() => setChangePasswordModal(true)}
+                  >
+                    <View style={styles.infoIcon}>
+                      <Lock size={20} color="#6b7280" />
+                    </View>
+                    <View style={styles.infoContent}>
+                      <Text style={styles.infoLabel}>Güvenlik</Text>
+                      <Text style={styles.infoValue}>Şifre Güncelle</Text>
+                    </View>
+                    <Edit2 size={16} color="#6b7280" />
+                  </TouchableOpacity>
+                </>
               </>
             )}
           </View>
@@ -716,6 +814,68 @@ export default function ProfileScreen() {
             </View>
           </View>
         </View>
+      </Modal>
+      <Modal visible={changePasswordModal} animationType="slide" transparent>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Şifre Güncelle</Text>
+
+            <ScrollView>
+              <InputGroup
+                placeholder="Mevcut Şifre"
+                value={oldPassword}
+                onChangeText={setOldPassword}
+                secureTextEntry={!showOldPassword}
+                rightIcon={showOldPassword ? EyeOff : Eye}
+                onRightIconPress={() => setShowOldPassword(!showOldPassword)}
+              />
+
+              <InputGroup
+                placeholder="Yeni Şifre"
+                value={newPassword}
+                onChangeText={setNewPassword}
+                secureTextEntry={!showNewPassword}
+                rightIcon={showNewPassword ? EyeOff : Eye}
+                onRightIconPress={() => setShowNewPassword(!showNewPassword)}
+              />
+
+              <InputGroup
+                placeholder="Yeni Şifre (Tekrar)"
+                value={confirmPassword}
+                onChangeText={setConfirmPassword}
+                secureTextEntry={!showConfirmPassword}
+                rightIcon={showConfirmPassword ? EyeOff : Eye}
+                onRightIconPress={() => setShowConfirmPassword(!showConfirmPassword)}
+              />
+            </ScrollView>
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={styles.cancelBtn}
+                onPress={() => {
+                  setChangePasswordModal(false);
+                  setOldPassword('');
+                  setNewPassword('');
+                  setConfirmPassword('');
+                }}
+              >
+                <Text style={styles.cancelBtnText}>İptal</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.saveBtn, loadingPassword && { opacity: 0.7 }]}
+                onPress={handleChangePassword}
+                disabled={loadingPassword}
+              >
+                <Text style={styles.saveBtnText}>
+                  {loadingPassword ? 'Güncelleniyor...' : 'Güncelle'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );

@@ -10,10 +10,11 @@ import {
   TextInput,
   Image,
   Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { ArrowLeft, Plus, Search, User, Pencil, Trash2, Camera } from 'lucide-react-native';
+import { ArrowLeft, Plus, Search, User, Pencil, Trash2, Camera, Eye, EyeOff } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { decode } from 'base64-arraybuffer';
@@ -98,6 +99,8 @@ export default function UsersManagement() {
     personnel_type_ids: [] as string[],
     service_modules: [] as string[],
   });
+
+  const [showPassword, setShowPassword] = useState(false);
 
   const [citySearch, setCitySearch] = useState('');
   const [districtSearch, setDistrictSearch] = useState('');
@@ -574,7 +577,22 @@ export default function UsersManagement() {
           }
         }
 
-        await loadData();
+        if (formData.password) {
+          console.log('Password provided during update, updating password via RPC...');
+
+          const { error: rpcError } = await supabase.rpc('update_user_password', {
+            target_user_id: editingUser.id,
+            new_password: formData.password
+          });
+
+          if (rpcError) {
+            console.error('Password update failed:', rpcError);
+            showAlert('Uyarı', 'Kullanıcı bilgileri güncellendi ancak şifre güncellenemedi: ' + rpcError.message);
+          } else {
+            console.log('Password updated successfully');
+          }
+        }
+
         showAlert('Başarılı', 'Kullanıcı güncellendi');
       } else {
         const formattedPhone = formData.phone.startsWith('+')
@@ -889,7 +907,10 @@ export default function UsersManagement() {
       </ScrollView>
 
       <Modal visible={modalVisible} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>
               {editingUser ? 'Kullanıcı Düzenle' : 'Yeni Kullanıcı'}
@@ -910,14 +931,14 @@ export default function UsersManagement() {
                 maxLength={10}
               />
 
-              {!editingUser && (
-                <InputGroup
-                  placeholder="Şifre"
-                  value={formData.password}
-                  onChangeText={(text) => setFormData({ ...formData, password: text })}
-                  secureTextEntry
-                />
-              )}
+              <InputGroup
+                placeholder={editingUser ? "Şifre (Boş bırakırsanız değişmez)" : "Şifre *"}
+                value={formData.password}
+                onChangeText={(text) => setFormData({ ...formData, password: text })}
+                secureTextEntry={!showPassword}
+                rightIcon={showPassword ? EyeOff : Eye}
+                onRightIconPress={() => setShowPassword(!showPassword)}
+              />
 
               <Text style={styles.label}>
                 Profil Resmi {formData.role === 'personnel' ? '(Zorunlu)' : ''}
@@ -1210,7 +1231,7 @@ export default function UsersManagement() {
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );
