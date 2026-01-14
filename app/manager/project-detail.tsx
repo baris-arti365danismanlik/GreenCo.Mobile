@@ -29,6 +29,8 @@ type Personnel = {
   avatar_url?: string;
   averageRating?: number;
   ratingCount?: number;
+  team_id?: string | null;
+  request_title?: string | null;
 };
 
 type PersonnelRequest = {
@@ -110,6 +112,7 @@ export default function ProjectDetail() {
     }
   };
 
+
   const loadPersonnel = async () => {
     try {
       const { data: session } = await supabase.auth.getSession();
@@ -139,6 +142,37 @@ export default function ProjectDetail() {
         p.project_ids?.includes(id)
       );
 
+      // Fetch assignments to link personnel -> team
+      const { data: assignments } = await supabase
+        .from('project_assignments')
+        .select('personnel_id, personnel_request_id')
+        .eq('project_id', id)
+        .is('removed_at', null);
+
+      // Fetch requests to link request -> team and get title
+      const { data: requests } = await supabase
+        .from('personnel_requests')
+        .select('id, team_id, title')
+        .eq('project_id', id);
+
+      const requestMap = new Map();
+      if (requests) {
+        requests.forEach(r => {
+          requestMap.set(r.id, { team_id: r.team_id, title: r.title });
+        });
+      }
+
+      const personnelDataMap = new Map();
+
+      if (assignments) {
+        assignments.forEach(a => {
+          const requestData = requestMap.get(a.personnel_request_id);
+          if (requestData) {
+            personnelDataMap.set(a.personnel_id, requestData);
+          }
+        });
+      }
+
       const now = new Date();
       const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
@@ -165,13 +199,15 @@ export default function ProjectDetail() {
             location: location,
             isWorking: isWorking,
             avatar_url: p.avatar_url,
+            team_id: personnelDataMap.get(p.id)?.team_id || null, // Add team_id
+            request_title: personnelDataMap.get(p.id)?.title || null // Add request_title
           };
         })
       );
 
       setPersonnel(personnelWithStatus);
 
-      // Fetch ratings for each personnel in this project
+      // Fetch ratings...
       const { data: attendanceRatings } = await supabase
         .from('attendance_records')
         .select('worker_id, performance_rating')
@@ -180,21 +216,18 @@ export default function ProjectDetail() {
 
       if (attendanceRatings && attendanceRatings.length > 0) {
         // Group ratings by worker
-        const ratingsMap = new Map(); // worker_id -> { total: number, count: number }
+        const ratingsMap = new Map();
 
         attendanceRatings.forEach(record => {
           if (!record.performance_rating) return;
-
           if (!ratingsMap.has(record.worker_id)) {
             ratingsMap.set(record.worker_id, { total: 0, count: 0 });
           }
-
           const stats = ratingsMap.get(record.worker_id);
           stats.total += record.performance_rating;
           stats.count += 1;
         });
 
-        // Update personnel with average rating
         const personnelWithRatings = personnelWithStatus.map(p => {
           const stats = ratingsMap.get(p.id);
           return {
@@ -553,125 +586,93 @@ export default function ProjectDetail() {
           </View>
         </View>
 
-        {personnelRequests.length > 0 && (
-          <>
-            <Text style={styles.sectionTitle}>İSTENİLEN PERSONEL</Text>
 
-            {(() => {
-              // Group logic
-              const requestsByTeam: { [key: string]: PersonnelRequest[] } = {};
-              const noTeamRequests: PersonnelRequest[] = [];
 
-              personnelRequests.forEach(req => {
-                if (req.team_id) {
-                  if (!requestsByTeam[req.team_id]) requestsByTeam[req.team_id] = [];
-                  requestsByTeam[req.team_id].push(req);
+        <View style={{ marginTop: 24, paddingBottom: 40 }}>
+          {/* Title */}
+          <Text style={styles.sectionTitle}>ATANAN PERSONEL ({personnel.length})</Text>
+
+          {personnel.length === 0 ? (
+            <View style={styles.emptyState}>
+              <User size={48} color={COLORS.border} />
+              <Text style={styles.emptyText}>Bu projeye henüz personel atanmamış</Text>
+            </View>
+          ) : (
+            /* Accordion Logic */
+            (() => {
+              const personnelByTeam: { [key: string]: any[] } = {};
+              const noTeamPersonnel: any[] = [];
+
+              personnel.forEach(p => {
+                if (p.team_id) {
+                  if (!personnelByTeam[p.team_id]) personnelByTeam[p.team_id] = [];
+                  personnelByTeam[p.team_id].push(p);
                 } else {
-                  noTeamRequests.push(req);
+                  noTeamPersonnel.push(p);
                 }
               });
 
-              const renderRequestCard = (request: PersonnelRequest) => {
-                const totalRequested = request.personnel_positions.reduce(
-                  (sum: number, pos: any) => sum + (pos.quantity || pos.count || 0),
-                  0
-                );
-
-                const statusColors = {
-                  approved: { bg: '#dcfce7', text: '#16a34a', label: 'Onaylandı' },
-                  rejected: { bg: '#fee2e2', text: '#dc2626', label: 'Reddedildi' },
-                  cancelled: { bg: '#f3f4f6', text: '#6b7280', label: 'İptal Edildi' },
-                  pending: { bg: '#fef3c7', text: '#f59e0b', label: 'Onay Bekliyor' },
-                  awaiting_assignment: { bg: '#dbeafe', text: '#2563eb', label: 'Atama Bekleniyor' },
-                  completed: { bg: '#dcfce7', text: '#16a34a', label: 'Tamamlandı' },
-                };
-
-                const statusColor = statusColors[request.status as keyof typeof statusColors] || statusColors.pending;
-                const canEdit = request.status === 'pending' || request.status === 'awaiting_assignment';
-
-                return (
-                  <View key={request.id} style={styles.requestCard}>
-                    <View style={styles.requestHeader}>
-                      <View style={styles.requestHeaderLeft}>
-                        <FileText size={18} color={COLORS.primary} />
-                        <View>
-                          {request.title && (
-                            <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.secondary, marginBottom: 2 }}>
-                              {request.title}
-                            </Text>
-                          )}
-                          <Text style={styles.requestTitle}>
-                            Toplam {totalRequested} Personel
-                          </Text>
-                        </View>
-                      </View>
-                      <View style={[styles.requestStatusBadge, { backgroundColor: statusColor.bg }]}>
-                        <Text style={[styles.requestStatusText, { color: statusColor.text }]}>
-                          {statusColor.label}
+              // Helper to render person card
+              const renderPerson = (person: any) => (
+                <TouchableOpacity
+                  key={person.id}
+                  style={[styles.personnelCard, { marginBottom: 0 }]}
+                  onPress={() => {
+                    router.push(`/manager/personnel-attendance?personnelId=${person.id}&projectId=${id}`);
+                  }}
+                >
+                  {person.avatar_url ? (
+                    <Image source={{ uri: person.avatar_url }} style={styles.personnelAvatar} />
+                  ) : (
+                    <View style={styles.personnelIcon}>
+                      <User size={20} color={COLORS.primary} />
+                    </View>
+                  )}
+                  <View style={{ flex: 1 }}>
+                    {/* Request Title Badge */}
+                    {person.request_title && (
+                      <View style={{ marginBottom: 4 }}>
+                        <Text style={{ fontSize: 10, color: COLORS.primary, fontWeight: '700', textTransform: 'uppercase' }}>
+                          {person.request_title}
                         </Text>
-                      </View>
-                    </View>
-
-                    <View style={styles.requestDetails}>
-                      {request.personnel_positions.map((pos: any, idx: number) => (
-                        <View key={idx} style={styles.positionItem}>
-                          <Text style={styles.positionLabel}>
-                            {pos.personnel_type_name || pos.position || 'Belirtilmemiş'}
-                          </Text>
-                          <Text style={styles.positionQuantity}>
-                            {pos.quantity || pos.count || 0} kişi
-                          </Text>
-                        </View>
-                      ))}
-                    </View>
-
-                    <View style={styles.requestDateRow}>
-                      <Calendar size={14} color={COLORS.textLight} />
-                      <Text style={styles.requestDate}>
-                        {new Date(request.created_at).toLocaleDateString('tr-TR', {
-                          day: '2-digit',
-                          month: 'long',
-                          year: 'numeric'
-                        })}
-                      </Text>
-                    </View>
-
-                    {request.rejection_reason && (
-                      <View style={styles.rejectionReason}>
-                        <Text style={styles.rejectionLabel}>Red Nedeni:</Text>
-                        <Text style={styles.rejectionText}>{request.rejection_reason}</Text>
                       </View>
                     )}
 
-                    {canEdit && (
-                      <View style={styles.requestActions}>
-                        <TouchableOpacity
-                          style={styles.editButton}
-                          onPress={() => router.push(`/manager/create-request?editId=${request.id}&projectId=${id}`)}
-                        >
-                          <Edit2 size={16} color={COLORS.primary} />
-                          <Text style={styles.editButtonText}>Düzenle</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={styles.cancelButton}
-                          onPress={() => handleCancelRequest(request.id)}
-                        >
-                          <Trash2 size={16} color="#dc2626" />
-                          <Text style={styles.cancelButtonText}>İptal Et</Text>
-                        </TouchableOpacity>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <Text style={styles.personnelName}>{person.full_name}</Text>
+                      {person.isWorking && (
+                        <View style={styles.workingBadge}>
+                          <Clock size={10} color={COLORS.success} />
+                          <Text style={styles.workingText}>Mesaide</Text>
+                        </View>
+                      )}
+                    </View>
+                    {person.position && (
+                      <Text style={styles.personnelPosition}>{person.position}</Text>
+                    )}
+
+                    {/* Average Rating Display */}
+                    {person.averageRating !== undefined && (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4, gap: 4 }}>
+                        <Star size={12} color="#fbbf24" fill="#fbbf24" />
+                        <Text style={{ fontSize: 12, color: COLORS.text, fontWeight: '600' }}>
+                          {person.averageRating.toFixed(1)}
+                        </Text>
+                        <Text style={{ fontSize: 10, color: COLORS.textLight }}>
+                          ({person.ratingCount} değerlendirme)
+                        </Text>
                       </View>
                     )}
                   </View>
-                );
-              };
+                </TouchableOpacity>
+              );
 
               return (
                 <View style={{ gap: 12 }}>
-                  {/* Teams Accordions */}
-                  {Object.keys(requestsByTeam).map(teamId => {
+                  {Object.keys(personnelByTeam).map(teamId => {
                     const teamName = teams.find(t => t.id === teamId)?.name || 'Bilinmeyen Ekip';
                     const isExpanded = expandedTeams[teamId];
-                    const requests = requestsByTeam[teamId];
+                    const list = personnelByTeam[teamId];
 
                     return (
                       <View key={teamId} style={{ backgroundColor: 'white', borderRadius: 12, overflow: 'hidden', borderWidth: 1, borderColor: COLORS.border }}>
@@ -689,7 +690,7 @@ export default function ProjectDetail() {
                             <Users size={20} color={COLORS.primary} />
                             <Text style={{ fontSize: 16, fontWeight: '700', color: COLORS.secondary }}>{teamName}</Text>
                             <View style={{ backgroundColor: COLORS.primaryLight, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 }}>
-                              <Text style={{ fontSize: 12, color: COLORS.primary, fontWeight: '600' }}>{requests.length} Talep</Text>
+                              <Text style={{ fontSize: 12, color: COLORS.primary, fontWeight: '600' }}>{list.length} Personel</Text>
                             </View>
                           </View>
                           {isExpanded ? <ChevronUp size={20} color={COLORS.textLight} /> : <ChevronDown size={20} color={COLORS.textLight} />}
@@ -697,15 +698,15 @@ export default function ProjectDetail() {
 
                         {isExpanded && (
                           <View style={{ padding: 12, gap: 12 }}>
-                            {requests.map(renderRequestCard)}
+                            {list.map(renderPerson)}
                           </View>
                         )}
                       </View>
                     );
                   })}
 
-                  {/* General / No Team Requests */}
-                  {noTeamRequests.length > 0 && (
+                  {/* No Team */}
+                  {noTeamPersonnel.length > 0 && (
                     <View style={{ backgroundColor: 'white', borderRadius: 12, overflow: 'hidden', borderWidth: 1, borderColor: COLORS.border }}>
                       <TouchableOpacity
                         style={{
@@ -718,82 +719,26 @@ export default function ProjectDetail() {
                         onPress={() => toggleTeamExpand('general')}
                       >
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                          <FileText size={20} color={COLORS.textLight} />
+                          <Users size={20} color={COLORS.textLight} />
                           <Text style={{ fontSize: 16, fontWeight: '700', color: COLORS.secondary }}>Genel (Takımsız)</Text>
                           <View style={{ backgroundColor: '#f1f5f9', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 }}>
-                            <Text style={{ fontSize: 12, color: COLORS.textLight, fontWeight: '600' }}>{noTeamRequests.length} Talep</Text>
+                            <Text style={{ fontSize: 12, color: COLORS.textLight, fontWeight: '600' }}>{noTeamPersonnel.length} Personel</Text>
                           </View>
                         </View>
                         {expandedTeams['general'] ? <ChevronUp size={20} color={COLORS.textLight} /> : <ChevronDown size={20} color={COLORS.textLight} />}
                       </TouchableOpacity>
-
                       {expandedTeams['general'] && (
                         <View style={{ padding: 12, gap: 12 }}>
-                          {noTeamRequests.map(renderRequestCard)}
+                          {noTeamPersonnel.map(renderPerson)}
                         </View>
                       )}
                     </View>
                   )}
                 </View>
               );
-
-            })()}
-          </>
-        )}
-
-        <Text style={styles.sectionTitle}>ATANAN PERSONEL ({personnel.length})</Text>
-
-        {personnel.length === 0 ? (
-          <View style={styles.emptyState}>
-            <User size={48} color={COLORS.border} />
-            <Text style={styles.emptyText}>Bu projeye henüz personel atanmamış</Text>
-          </View>
-        ) : (
-          personnel.map((person) => (
-            <TouchableOpacity
-              key={person.id}
-              style={styles.personnelCard}
-              onPress={() => {
-                router.push(`/manager/personnel-attendance?personnelId=${person.id}&projectId=${id}`);
-              }}
-            >
-              {person.avatar_url ? (
-                <Image source={{ uri: person.avatar_url }} style={styles.personnelAvatar} />
-              ) : (
-                <View style={styles.personnelIcon}>
-                  <User size={20} color={COLORS.primary} />
-                </View>
-              )}
-              <View style={{ flex: 1 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <Text style={styles.personnelName}>{person.full_name}</Text>
-                  {person.isWorking && (
-                    <View style={styles.workingBadge}>
-                      <Clock size={10} color={COLORS.success} />
-                      <Text style={styles.workingText}>Mesaide</Text>
-                    </View>
-                  )}
-                </View>
-                {person.position && (
-                  <Text style={styles.personnelPosition}>{person.position}</Text>
-                )}
-
-                {/* Average Rating Display */}
-                {person.averageRating !== undefined && (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4, gap: 4 }}>
-                    <Star size={12} color="#fbbf24" fill="#fbbf24" />
-                    <Text style={{ fontSize: 12, color: COLORS.text, fontWeight: '600' }}>
-                      {person.averageRating.toFixed(1)}
-                    </Text>
-                    <Text style={{ fontSize: 10, color: COLORS.textLight }}>
-                      ({person.ratingCount} değerlendirme)
-                    </Text>
-                  </View>
-                )}
-              </View>
-            </TouchableOpacity>
-          ))
-        )}
+            })()
+          )}
+        </View>
       </ScrollView>
 
       <Modal visible={qrModalVisible} transparent animationType="fade">
